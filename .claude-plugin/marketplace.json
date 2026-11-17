@@ -1,0 +1,24 @@
+{
+  "name": "vice-code",
+  "owner": {
+    "name": "RebSem",
+    "url": "https://github.com/RebSem"
+  },
+  "description": "Vice Code: a Miami sunset for Claude Code, and a game on top of it. Unofficial fan mod.",
+  "plugins": [
+    {
+      "name": "vice-code",
+      "source": "./",
+      "description": "A Miami sunset for Claude Code: the app's colors and a skyline set in symbols behind the conversation. One command adds the game: your usage limits as a wanted level, with a HUD, stats and a radio. Unofficial fan mod, not affiliated with or endorsed by Anthropic or any game publisher.",
+      "version": "1.2.0",
+      "category": "fun",
+      "tags": [
+        "theme",
+        "look",
+        "synthwave",
+        "stats",
+        "limits"
+      ]
+    }
+  ]
+}

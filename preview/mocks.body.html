@@ -1,0 +1,141 @@
+<title>Vice Code Mockups</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>{{css}}</style>
+<main class="page" id="page" data-ui="ru">
+  <header>
+    <h1>Vice Code 1.2: закат для Claude Code и игра поверх него</h1>
+    <p class="lead">Макеты собраны из тех же данных и картинок, что рисует сам мод. Картинки живые: солнце, пальмы и вода двигаются. Слова в окнах расставляет эта страница, поэтому это макет, а не снимок экрана. Цифры, имя и проекты выдуманы.</p>
+    <div class="toggle" role="group" aria-label="Язык интерфейса в макетах">
+      <button type="button" id="lang-ru" aria-pressed="true" data-set="ru">Интерфейс: русский</button>
+      <button type="button" id="lang-en" aria-pressed="false" data-set="en">English</button>
+    </div>
+  </header>
+
+  <section>
+    <h2>Два режима</h2>
+    <ul class="points">
+      <li><b>Lite: включён сразу</b>Только оформление. Приложение перекрашивается в цвета заката, а за разговором стоит город из символов. Ничего не считает и не читает историю.</li>
+      <li><b>Full: одна команда</b><code class="k">/vice full</code> включает игру: лимиты становятся розыском, над полем ввода появляются звёзды и шкалы, в городе загораются патрульные огни.</li>
+      <li><b>Выключается так же просто</b><code class="k">/vice lite</code> возвращает тихую версию, <code class="k">/vice off</code> выключает мод совсем, <code class="k">/vice on</code> возвращает.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>До и после одной команды</h2>
+    <div class="pair">
+      <figure>{{before}}<figcaption>До: приложение как есть.</figcaption></figure>
+      <figure>{{liteWork}}<figcaption>После, ночь: те же панели в цветах мода, за разговором — город. Строки инструментов и поле ввода не тронуты.</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lite: первая сессия</h2>
+    <figure>{{liteHello}}<figcaption>Тёмное окно, закат. Карточка приходит один раз после установки: что изменилось, отсчёт и кнопка, которая включает игру. Фон следует местному времени: рассвет, день, закат, ночь.</figcaption></figure>
+    <div class="try">
+      <div class="pic hov" id="try-dark"></div>
+      <div class="cap2" style="color:#a999bb">Проведи курсором по небу: символы загораются и медленно гаснут, за курсором остаётся след. Так ведёт себя баннер в карточке. Доходит ли курсор до большого фона за разговором, зависит от приложения; там небо в любом случае движется само.</div>
+    </div>
+    <figure>{{liteLight}}<figcaption>Светлое окно, день: та же сцена на светлой бумаге, цвета панелей светлые. Сцена сама выбирает бумагу по виду окна; если не угадала — <code class="k">/vice paper dark</code> или <code class="k">/vice paper light</code>.</figcaption></figure>
+    <figure>{{liteDawn}}<figcaption>Светлое окно, рассвет.</figcaption></figure>
+    <div class="scenes">{{scenes}}</div>
+    <p class="cap2">Четыре времени суток на двух бумагах. Такой баннер стоит в карточке и в панели статистики.</p>
+  </section>
+
+  <section>
+    <h2>Full: игра включена</h2>
+    <figure>{{welcome}}<figcaption>Новая сессия в игре: неделя в цифрах, совет, отсчёт. Над полем ввода строка со звёздами, здоровьем (контекст), бронёй (недельный лимит) и деньгами.</figcaption></figure>
+    <figure>{{work}}<figcaption>Четыре звезды: у берега патрульные огни, по набережной едет машина, над городом вертолёт с прожектором. У вызовов инструментов стоят метки снаряжения. Тост приходит один раз на ступень. Огни мигают около 13 секунд и замирают.</figcaption></figure>
+    <figure>{{busted}}<figcaption>Лимит кончился. Карточка встаёт в ленту там, где Claude замолчал: какой лимит и когда выпустят. Слово набрано плитками, буквы падают по одной. Когда окно сбросится, карточка сожмётся до строки «На свободе. Лимит обновился».</figcaption></figure>
+  </section>
+
+  <section>
+    <h2>Панель /vice</h2>
+    <div class="grid2">
+      <figure>{{paneRap}}</figure>
+      <figure>{{paneGeneral}}</figure>
+      <figure>{{paneMap}}</figure>
+    </div>
+    <p class="cap2">Только в игре. Деньги подписаны «по ценам API»: у подписчика это не списание, а стоимость сделанного по прайсу.</p>
+  </section>
+
+  <section>
+    <h2>Терминал</h2>
+    <figure>{{termLite}}<figcaption>Lite в терминале. Цвета и фон рисуют только десктопное и мобильное приложения, поэтому здесь Lite — это баннер в начале разговора и подсказка, как включить игру.</figcaption></figure>
+    <figure>{{termWelcome}}<figcaption>Игра в терминале: карточка с той же сценой пикселями, под ней строка со звёздами и шкалами.</figcaption></figure>
+    <div class="stack">
+      <figure>{{termHot}}<figcaption>Четыре звезды. Главное стоит слева: узкий терминал обрезает строку справа.</figcaption></figure>
+      <figure>{{termBusted}}<figcaption>Арест в ленте и строкой над полем ввода.</figcaption></figure>
+    </div>
+    <figure>{{termLight}}<figcaption>Светлая тема терминала. Цвета берутся из темы человека, поэтому текст читается в любой.</figcaption></figure>
+  </section>
+
+  <section>
+    <h2>Установка</h2>
+    <pre class="shell">{{install}}</pre>
+    <ol class="steps">
+      <li>Одна команда в терминале. Она сама добавляет маркетплейс и ставит мод.</li>
+      <li>Открыть новую сессию. В десктопе окно перекрасится и за разговором встанет город; в терминале в начале разговора появится баннер.</li>
+      <li>В десктопе то же самое делается кнопками: «+» у поля ввода, затем Plugins, Add marketplace, <code class="k">RebSem/vice-code</code>, Add plugin.</li>
+      <li>Игра включается командой <code class="k">/vice full</code> или кнопкой в карточке.</li>
+    </ol>
+    <div class="checks">
+      <div>
+        <h3>Проверено</h3>
+        <ul>
+          <li>Установка одной командой, обновление и удаление, в отдельной временной папке настроек.</li>
+          <li>Проверка манифеста и 59 тестов проходят на Claude Code 2.1.319 (терминал) и 2.1.325 (движок десктопа).</li>
+          <li>Строка «17 userConfig options not yet set» — не ошибка. У каждой настройки есть значение по умолчанию.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Не проверено вживую</h3>
+        <ul>
+          <li>Вид в живом окне приложения: тесты проверяют дерево элементов, а не пиксели.</li>
+          <li>Угадывает ли сцена вид окна (светлое или тёмное). Если нет — <code class="k">/vice paper dark</code>.</li>
+          <li>Доходит ли курсор до фона за разговором. Баннер в карточке на курсор отвечает точно.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Что нужно человеку</h3>
+        <ul>
+          <li>Claude Code 2.1.319 или новее. На старой версии мод скажет одной строкой: «обнови: claude update».</li>
+          <li>Цвета и фон — в десктопном и мобильном приложении. В терминале и VS Code — карточки и игра.</li>
+          <li>Розыск и броня видны на подписках Pro и Max. С ключом API остаются здоровье, деньги и статистика.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  var page = document.getElementById('page');
+  var buttons = document.querySelectorAll('.toggle button');
+  function set(lang) {
+    page.setAttribute('data-ui', lang);
+    buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-set') === lang)); });
+    try { localStorage.setItem('vice-mock-lang', lang); } catch (e) {}
+  }
+  buttons.forEach(function (b) { b.addEventListener('click', function () { set(b.getAttribute('data-set')); }); });
+  try { var saved = localStorage.getItem('vice-mock-lang'); if (saved === 'en' || saved === 'ru') set(saved); } catch (e) {}
+  // A picture inside an <img> cannot feel the pointer. Move each marked one into a shadow
+  // root, where its own styles stay its own and its :hover rules work.
+  function decode(b64) {
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  var first = null;
+  document.querySelectorAll('.hov[data-svg]').forEach(function (el) {
+    try {
+      var svg = decode(el.getAttribute('data-svg'));
+      if (!first) first = svg;
+      var root = el.attachShadow({ mode: 'open' });
+      root.innerHTML = '<style>svg{width:100%;height:auto;display:block}</style>' + svg;
+    } catch (e) {}
+  });
+  var slot = document.getElementById('try-dark');
+  if (slot && first) {
+    try { slot.attachShadow({ mode: 'open' }).innerHTML = '<style>svg{width:100%;height:auto;display:block}</style>' + first; } catch (e) {}
+  }
+})();
+</script>

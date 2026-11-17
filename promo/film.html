@@ -1,0 +1,474 @@
+<!doctype html>
+<!--
+  The film as one page. render.mjs loads it, calls init(assets, format) with the pictures
+  from assets.ts, then setTime(t) once per frame. Nothing runs on a timer: every frame is
+  a pure function of t, and the scenes' own CSS animations are paused and set to t.
+  format: 'h' (1920 x 1080) or 'v' (1080 x 1920).
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Vice Code promo</title>
+<style>
+:root {
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --pink: #f0468c; --green: #2fb894; --violet: #a878f0; --orange: #ff8a5c;
+}
+* { box-sizing: border-box }
+html, body { margin: 0; background: #140e22; overflow: hidden }
+#stage { position: relative; overflow: hidden; background: var(--page, #140e22); font-family: var(--sans) }
+.h #stage { width: 1920px; height: 1080px }
+.v #stage { width: 1080px; height: 1920px }
+iframe { border: 0; display: block; background: transparent }
+.full { position: absolute; inset: 0; width: 100%; height: 100% }
+.off { display: none !important }
+#dim { position: absolute; inset: 0; background: #140e22 }
+#title { position: absolute; left: 0; top: 0 }
+#ready { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: #f5edf7; font: 500 64px/1.2 var(--sans); letter-spacing: -.01em }
+.v #ready { font-size: 76px; padding: 0 80px }
+
+/* ---- the app window ---- */
+.win { position: absolute; overflow: hidden; border-radius: 18px; background: var(--win); color: var(--fg); border: 1px solid var(--line) }
+.h .win { left: 160px; top: 110px; width: 1600px; height: 900px }
+.v .win { left: 40px; top: 190px; width: 1000px; height: 1600px; border-radius: 28px }
+.win .scene { position: absolute; left: 0; right: 0; bottom: 0; overflow: hidden }
+.h .win .scene { top: 52px }
+.v .win .scene { top: 72px }
+.win .scene iframe { position: absolute; inset: 0; width: 100%; height: 100% }
+.bar { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 10px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); color: var(--dim) }
+.h .bar { height: 52px; font-size: 18px }
+.v .bar { height: 72px; font-size: 26px; padding: 0 28px; gap: 14px }
+.bar i { width: 14px; height: 14px; border-radius: 50%; background: var(--line2) }
+.v .bar i { width: 18px; height: 18px }
+.bar span { margin-left: 12px }
+.side { position: absolute; left: 0; bottom: 0; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px; padding: 24px 18px }
+.h .side { top: 52px; width: 250px }
+.v .side { top: 72px; width: 96px; padding: 28px 22px; gap: 22px }
+.side b { display: block; height: 16px; border-radius: 8px; background: var(--row) }
+.side b.hi { background: var(--rowhi) }
+.v .side b { height: 52px; border-radius: 12px }
+.main { position: absolute; right: 0; bottom: 0; display: flex; flex-direction: column }
+.h .main { top: 52px; left: 250px; padding: 0 150px 34px }
+.v .main { top: 72px; left: 96px; padding: 0 40px 40px }
+.conv { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 26px; padding-bottom: 26px }
+.v .conv { gap: 34px; padding-bottom: 34px }
+.msg { font-size: 25px; line-height: 1.45 }
+.v .msg { font-size: 40px; line-height: 1.4 }
+.msg.user { align-self: flex-end; max-width: 80%; background: var(--bubble); border-radius: 16px; padding: 14px 22px }
+.v .msg.user { border-radius: 22px; padding: 20px 28px }
+.msg:not(.user) { align-self: flex-start; max-width: 92%; background: var(--block); border-radius: 14px; padding: 12px 20px; margin-left: -20px }
+.v .msg:not(.user) { padding: 16px 24px; margin-left: -24px }
+.msg.cmd { font-family: var(--mono); font-size: 22px; max-width: none }
+.h .msg.cmd { white-space: nowrap }
+.v .msg.cmd { font-size: 34px }
+.msg.tool { font: 20px/1.5 var(--mono); color: var(--dim) }
+.v .msg.tool { font-size: 32px }
+.msg .ok { color: var(--ok) }
+.msg.note { color: var(--dim) }
+.card { display: flex; flex-direction: column; gap: 14px }
+.card iframe { width: 100%; aspect-ratio: 720 / 150; border-radius: 12px }
+.card p { margin: 0; font-size: 24px; color: var(--fg); background: var(--block); border-radius: 12px; padding: 10px 18px; align-self: flex-start }
+.v .card p { font-size: 38px }
+.hud { display: flex; align-items: center; gap: 18px; padding: 10px 20px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; color: var(--dim); font-size: 21px; font-weight: 600; letter-spacing: .02em }
+.v .hud { font-size: 34px; gap: 22px; flex-wrap: wrap; row-gap: 16px; padding: 16px 24px; border-radius: 20px; margin-bottom: 18px }
+.hud .grp { display: flex; align-items: center; gap: 12px }
+.hud .stars { position: relative; width: 221px; height: 38px }
+.v .hud .stars { width: 276px; height: 48px }
+.hud .stars iframe { position: absolute; inset: 0; width: 100%; height: 100% }
+.hud .meter svg { display: block; width: 160px; height: 13px }
+.v .hud .meter svg { width: 190px; height: 16px }
+.hud .sep { width: 1px; align-self: stretch; background: var(--line); margin: 4px 6px }
+.v .hud .sep { display: none }
+.prompt { position: relative; min-height: 76px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line2); padding: 20px 24px; font: 24px/1.45 var(--mono); color: var(--fg); white-space: pre-wrap; word-break: normal }
+.v .prompt { min-height: 110px; font-size: 36px; padding: 26px 30px; border-radius: 22px }
+.prompt .ph { color: var(--dim); font-family: var(--sans) }
+.cursor { display: inline-block; width: .55em; height: 1.1em; vertical-align: -.2em; background: var(--fg); margin-left: 2px }
+
+/* ---- the terminal ---- */
+#term { background: #0e0a18; color: #f5edf7; --line: rgba(245,237,247,.14); --panel: #1a132c; --dim: #a999bb; --line2: rgba(245,237,247,.2) }
+#term .body { position: absolute; left: 0; right: 0; bottom: 0; font-family: var(--mono); display: flex; flex-direction: column; gap: 22px }
+.h #term .body { top: 52px; padding: 60px 150px; font-size: 40px; justify-content: center }
+.v #term .body { top: 72px; padding: 90px 50px; font-size: 40px; justify-content: center }
+#term .d { color: #a999bb }
+#term .p { color: #f0468c }
+#term svg { display: block }
+
+/* ---- the chip and the end card ---- */
+#chip { position: absolute; font: 600 22px/1 var(--mono); letter-spacing: .04em; color: #f5edf7; background: #201836; border: 1px solid rgba(245,237,247,.18); border-radius: 999px; padding: 12px 20px; white-space: nowrap }
+#chip b { color: var(--pink); font-weight: 700 }
+.h #chip { left: 160px; top: 40px }
+.v #chip { left: 40px; top: 80px; font-size: 34px; padding: 18px 28px }
+#chip.light { background: #fff6f3; color: #2a1a30; border-color: rgba(42,26,48,.2) }
+#chip.light b { color: #c8306f }
+#end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; color: #f5edf7 }
+.pill { font: 600 34px/1.35 var(--mono); background: #1a132c; border: 2px solid var(--pink); border-radius: 18px; padding: 22px 36px; color: #f5edf7; white-space: pre; text-align: left }
+.pill .p { color: var(--pink) }
+.v .pill { font-size: 44px; padding: 30px 40px; border-radius: 24px }
+.repo { font: 500 30px/1 var(--mono); color: #f5edf7; background: rgba(20,14,34,.7); padding: 10px 16px; border-radius: 10px }
+.v .repo { font-size: 40px }
+.foot { position: absolute; bottom: 36px; left: 0; right: 0; text-align: center; font: 400 20px/1.4 var(--sans); color: #c9bcd6 }
+.v .foot { font-size: 28px; bottom: 70px; padding: 0 80px }
+</style>
+</head>
+<body>
+<div id="stage">
+  <iframe id="sky" class="full"></iframe>
+  <div id="dim"></div>
+  <div id="ready">Your Claude Code is ready.</div>
+
+  <div id="win" class="win">
+    <div class="scene" id="scenebox"></div>
+    <div class="bar"><i></i><i></i><i></i><span>my-project</span></div>
+    <div class="side" id="side"></div>
+    <div class="main">
+      <div class="conv" id="conv">
+        <div class="msg user" data-at="0">Tidy up the date parser and add tests.</div>
+        <div class="msg tool" data-at="0"><span class="ok">✓</span> Edited src/date.ts<br><span class="ok">✓</span> Ran npm test · 12 passed</div>
+        <div class="msg" data-at="0">Done. The parser is split in two, and the new tests cover time zones and leap years.</div>
+        <div class="msg user cmd" data-at="7.2">claude plugin install vice-code --marketplace RebSem/vice-code</div>
+        <div class="msg tool" data-at="7.45"><span class="ok">✓</span> Installed vice-code</div>
+        <div class="msg user cmd" data-at="10.3">/vice full</div>
+        <div class="msg note" data-at="10.45">Full mode is on. Your limits are a wanted level now.</div>
+        <div class="card" data-at="12.6" id="card">
+          <div id="bustedbox"></div>
+          <p>The 5-hour limit is used up. Out at 15:40 (in 1 h 12 min).</p>
+        </div>
+      </div>
+      <div class="hud" id="hud">
+        <div class="grp">Wanted <div class="stars" id="stars"></div></div>
+        <div class="sep"></div>
+        <div class="grp">Health <span class="meter" id="health"></span></div>
+        <div class="grp">Armor <span class="meter" id="armor"></span></div>
+      </div>
+      <div class="prompt" id="prompt"></div>
+    </div>
+  </div>
+
+  <div id="term" class="win">
+    <div class="bar"><i></i><i></i><i></i><span>Terminal</span></div>
+    <div class="body">
+      <div class="d">$ claude</div>
+      <div id="pix"></div>
+      <div>Vice Code · for Claude Code</div>
+      <div class="p">Welcome to Miami.</div>
+    </div>
+  </div>
+
+  <svg id="title"></svg>
+  <div id="end">
+    <div class="pill" id="pill"></div>
+    <div class="repo" id="repo">github.com/RebSem/vice-code</div>
+    <div class="foot" id="foot">Unofficial fan mod. Not affiliated with Anthropic or any game publisher.</div>
+  </div>
+  <div id="chip"></div>
+</div>
+
+<script>
+'use strict'
+const $ = id => document.getElementById(id)
+let F = 'h'
+let W = 1920, H = 1080
+let A = null
+
+// ---------------------------------------------------------------- the timeline (seconds)
+const T = {
+  sky: 0.05, years: 0.5, date: 1.9, ready: 3.2,
+  win: 5.0, typeA: 5.45, enterA: 7.2, look: 7.25, rise: 7.35, sun: 8.1,
+  typeB: 9.55, enterB: 10.3, hud: 10.45, star: [10.75, 11.2, 11.65, 12.1], busted: 12.6,
+  cutLight: 14.5, cutNight: 15.33, cutTerm: 16.17, end: 17.0, hold: 18.5,
+}
+const CMD_A = 'claude plugin install vice-code --marketplace RebSem/vice-code'
+const CMD_B = '/vice full'
+
+// ---------------------------------------------------------------- a 5 x 7 face for the title words
+const FACE = {
+  '1': ['..#..', '.##..', '#.#..', '..#..', '..#..', '..#..', '#####'],
+  '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+  '9': ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  V: ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+  I: ['###', '.#.', '.#.', '.#.', '.#.', '.#.', '###'],
+  C: ['.####', '#....', '#....', '#....', '#....', '#....', '.####'],
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  '.': ['..', '..', '..', '..', '..', '##', '##'],
+  ' ': ['..', '..', '..', '..', '..', '..', '..'],
+}
+const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s) }
+
+/** A word as tiles: [col, row, letterIndex], and its width in columns. */
+function word(text) {
+  const tiles = []
+  let col = 0
+  ;[...text].forEach((ch, n) => {
+    const rows = FACE[ch]
+    rows.forEach((r, y) => { for (let x = 0; x < r.length; x++) if (r[x] === '#') tiles.push([col + x, y, n]) })
+    col += rows[0].length + 1
+  })
+  return { tiles, cols: col - 1 }
+}
+
+/**
+ * Title lines set in tiles. Each tile lands on its own beat, left to right with a little
+ * scatter, dropping two cells in two steps: the stepped motion of the mod's BUSTED word.
+ * mode 'tile' lands tile by tile, 'letter' a letter at a time.
+ */
+function titleSvg(lines, t) {
+  let out = ''
+  for (const L of lines) {
+    if (t < L.at) continue
+    const w = word(L.text)
+    const x0 = Math.round((W - w.cols * L.cell) / 2)
+    const s = L.cell - Math.max(2, Math.round(L.cell * 0.1))
+    const glyph = Math.round(L.cell * 0.55)
+    for (const [cx, cy, n] of w.tiles) {
+      const delay = L.mode === 'letter' ? n * 0.08 : (cx / w.cols) * L.dur + hash(cx, cy + n) * 0.14
+      const k = t - L.at - delay
+      if (k < 0) continue
+      const step = Math.min(3, Math.floor(k / 0.045))
+      const dy = (2 - Math.min(2, step)) * L.cell * 0.5
+      const x = x0 + cx * L.cell, y = L.y + cy * L.cell - dy
+      const a = step === 0 ? 0.45 : 1
+      out += `<rect x="${x}" y="${y}" width="${s}" height="${s}" fill="${L.color}" fill-opacity="${a}"/>`
+      if (L.glyphs) out += `<text x="${x + s / 2}" y="${y + s * 0.72}" fill="${L.ink}" fill-opacity=".55" font-family="ui-monospace,Menlo,monospace" font-weight="800" font-size="${glyph}" text-anchor="middle">${'$%tSX:;'[Math.floor(hash(cx + 3, cy + 9) * 7)]}</text>`
+    }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- colors
+const rgba = s => {
+  if (s[0] === '#') return [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16)).concat(1)
+  return s.match(/[\d.]+/g).map(Number)
+}
+const mix = (a, b, k) => { const x = rgba(a), y = rgba(b); return `rgba(${x.map((v, i) => (i < 3 ? Math.round(v + (y[i] - v) * k) : (v + (y[i] - v) * k).toFixed(3))).join(',')})` }
+const NEUTRAL = { page: '#111113', win: '#1c1c1e', panel: '#252527', bubble: '#2e2e31', line: 'rgba(255,255,255,0.09)', line2: 'rgba(255,255,255,0.16)', fg: '#ececec', dim: '#9a9a9e', row: 'rgba(255,255,255,0.07)', rowhi: 'rgba(255,255,255,0.14)', ok: '#7fbf8f', block: 'rgba(28,28,30,0)' }
+const VIOLET = { page: '#140e22', win: '#140e22', panel: 'rgba(26,19,44,0.9)', bubble: 'rgba(32,24,54,0.94)', line: 'rgba(245,237,247,0.12)', line2: 'rgba(240,70,140,0.55)', fg: '#f5edf7', dim: '#a999bb', row: 'rgba(168,120,240,0.16)', rowhi: 'rgba(240,70,140,0.42)', ok: '#2fb894', block: 'rgba(20,14,34,0.8)' }
+const LIGHT = { page: '#f3e6e4', win: '#f3e6e4', panel: 'rgba(255,247,244,0.9)', bubble: 'rgba(255,255,255,0.92)', line: 'rgba(42,26,48,0.13)', line2: 'rgba(200,48,111,0.5)', fg: '#2a1a30', dim: '#6e5a72', row: 'rgba(120,80,160,0.14)', rowhi: 'rgba(214,36,122,0.32)', ok: '#1f8a6a', block: 'rgba(255,247,244,0.86)' }
+function paint(el, from, to, k) {
+  for (const key of Object.keys(from)) el.style.setProperty('--' + key, k <= 0 ? from[key] : k >= 1 ? to[key] : mix(from[key], to[key], k))
+}
+
+// ---------------------------------------------------------------- scenes in their own documents
+const frames = [] // { el, start, localNames }
+function sceneDoc(svg, extra = '') {
+  return `<!doctype html><html><head><style>html,body{margin:0;height:100%;overflow:hidden;background:transparent}body>svg{display:block;width:100%;height:100%}` +
+    `.nosun .ka,.nosun .kb,.nosun .kc,.nosun .ga{visibility:hidden}` +
+    // The sky alone: the paper and the field of glyphs, nothing standing on it.
+    `.skyonly body>svg>*:not(defs):not(style):not(.sky):not(rect:nth-of-type(1)){display:none}` +
+    `${extra}</style></head><body>${svg}</body></html>`
+}
+function makeFrame(parent, svg, opts = {}) {
+  const el = document.createElement('iframe')
+  if (opts.cls) el.className = opts.cls
+  el.srcdoc = sceneDoc(svg)
+  parent.insertBefore(el, opts.before ?? null)
+  const f = { el, start: opts.start ?? 0, local: opts.local ?? null, ready: new Promise(r => el.addEventListener('load', r, { once: true })) }
+  frames.push(f)
+  return f
+}
+/** Pause every CSS animation of a scene and set it to the film's time. */
+function drive(f, t) {
+  if (f.el.classList.contains('off')) return
+  const doc = f.el.contentDocument
+  if (!doc) return
+  for (const a of doc.getAnimations()) {
+    const name = a.animationName || ''
+    const isLocal = f.local === 'all' || (f.local && f.local.includes(name))
+    const tt = isLocal ? Math.max(0, t - f.start) : t
+    a.pause()
+    a.currentTime = tt * 1000
+  }
+}
+
+let SKY, BG = {}, STARS = [], BUSTED
+function init(assets, format) {
+  A = assets
+  F = format
+  document.documentElement.className = F
+  if (F === 'v') { W = 1080; H = 1920 }
+  SKY = makeFrame($('stage'), A.scenes.sunset0, { cls: 'full', before: $('sky') })
+  $('sky').remove()
+  SKY.el.id = 'sky'
+  const box = $('scenebox')
+  BG.sunset0 = makeFrame(box, A.scenes.sunset0)
+  BG.sunset3 = makeFrame(box, A.scenes.sunset3, { start: T.star[2], local: ['cop'] })
+  BG.sunset4 = makeFrame(box, A.scenes.sunset4, { start: T.star[3], local: ['cop'] })
+  BG.light = makeFrame(box, A.scenes.light)
+  BG.night = makeFrame(box, A.scenes.night)
+  A.stars.forEach((svg, n) => STARS.push(makeFrame($('stars'), svg, { start: T.star[n - 1] ?? 0, local: 'all' })))
+  BUSTED = makeFrame($('bustedbox'), A.busted, { start: T.busted, local: 'all' })
+  // The sidebar: a few gray rows.
+  const rows = F === 'h' ? [0.8, 0.62, 0.7, 0.5, 0.66, 0.44, 0.58] : [1, 1, 1, 1, 1]
+  $('side').innerHTML = rows.map((w, i) => `<b class="${i === 1 ? 'hi' : ''}" style="width:${w * 100}%"></b>`).join('')
+  // The terminal banner: the mod's pixels, a square a pixel with a hairline between.
+  const px = A.pixels
+  const cell = F === 'h' ? 32 : 25
+  let r = ''
+  px.forEach((row, y) => row.forEach((c, x) => { r += `<rect x="${x * cell}" y="${y * cell}" width="${cell - 1}" height="${cell - 1}" fill="#${c.toString(16).padStart(6, '0')}"/>` }))
+  $('pix').innerHTML = `<svg width="${px[0].length * cell}" height="${px.length * cell}">${r}</svg>`
+  $('pill').innerHTML = F === 'h'
+    ? `<span class="p">$</span> claude plugin install vice-code --marketplace RebSem/vice-code`
+    : `<span class="p">$</span> claude plugin install vice-code\n  --marketplace RebSem/vice-code`
+  $('title').setAttribute('width', W)
+  $('title').setAttribute('height', H)
+  return Promise.all(frames.map(f => f.ready))
+}
+
+// ---------------------------------------------------------------- one frame
+const show = (el, on) => el.classList.toggle('off', !on)
+const stepped = (t, t0, dur, n) => Math.max(0, Math.min(n, Math.floor(((t - t0) / dur) * n))) / n
+
+function setTime(t) {
+  const end = t >= T.end
+  const intro = t < T.win
+  const inWin = t >= T.win && t < T.cutTerm
+  const sceneT = Math.min(t, T.hold)
+
+  // ---- the full-frame scene: the glyph sky at first, the dusk at the end
+  show(SKY.el, intro || end)
+  SKY.el.contentDocument.documentElement.classList.toggle('skyonly', intro)
+  if (intro) {
+    // The sky comes up from the bottom a row of glyph blocks at a time.
+    const scale = Math.max(W / 1600, H / 1000)
+    const block = 48 * scale
+    const rowsUp = Math.floor(Math.max(0, t - T.sky) / 0.075)
+    SKY.el.style.clipPath = `inset(${Math.max(0, H - rowsUp * block)}px 0 0 0)`
+  } else SKY.el.style.clipPath = ''
+  drive(SKY, sceneT)
+  show($('dim'), end)
+  $('dim').style.opacity = end ? (t < T.end + 0.2 ? 0.25 : 0.42) : 0
+
+  // ---- titles
+  const cellA = F === 'h' ? 26 : 30
+  let lines = []
+  if (t < T.ready) {
+    if (F === 'h') lines = [
+      { text: '13 YEARS.', at: T.years, dur: 0.9, cell: 26, y: 330, color: '#fff1f8' },
+      { text: '11.19.', at: T.date, dur: 0.5, cell: 26, y: 580, color: '#f0468c' },
+    ]
+    else lines = [
+      { text: '13', at: T.years, dur: 0.35, cell: 34, y: 520, color: '#fff1f8' },
+      { text: 'YEARS.', at: T.years + 0.3, dur: 0.6, cell: 30, y: 800, color: '#fff1f8' },
+      { text: '11.19.', at: T.date, dur: 0.5, cell: 30, y: 1170, color: '#f0468c' },
+    ]
+  } else if (end) {
+    lines = F === 'h'
+      ? [{ text: 'VICE CODE', at: T.end + 0.15, dur: 0.7, cell: 28, y: 250, color: '#fff1f8', mode: 'letter' }]
+      : [{ text: 'VICE', at: T.end + 0.15, dur: 0.4, cell: 40, y: 430, color: '#fff1f8', mode: 'letter' },
+         { text: 'CODE', at: T.end + 0.45, dur: 0.4, cell: 40, y: 780, color: '#fff1f8', mode: 'letter' }]
+  }
+  $('title').innerHTML = titleSvg(lines, t)
+  show($('ready'), t >= T.ready && t < T.win)
+
+  // ---- the window
+  const isLight = t >= T.cutLight && t < T.cutNight
+  const isNight = t >= T.cutNight && t < T.cutTerm
+  show($('win'), inWin)
+  const stage = $('stage')
+  let k = 0
+  if (t >= T.look) k = t < T.look + 0.15 ? 0.34 : t < T.look + 0.3 ? 0.67 : 1
+  const win = $('win')
+  if (isLight) { paint(win, LIGHT, LIGHT, 1); paint(stage, LIGHT, LIGHT, 1) }
+  else { paint(win, NEUTRAL, VIOLET, k); paint(stage, NEUTRAL, VIOLET, intro || end || t >= T.cutTerm ? 1 : k) }
+
+  // which scene stands behind the conversation
+  let bg = null
+  if (isLight) bg = 'light'
+  else if (isNight) bg = 'night'
+  else if (t >= T.star[3]) bg = 'sunset4'
+  else if (t >= T.star[2]) bg = 'sunset3'
+  else if (t >= T.rise) bg = 'sunset0'
+  for (const key of Object.keys(BG)) show(BG[key].el, inWin && key === bg)
+  const box = $('scenebox')
+  // The skyline rises from the bottom edge in six steps; the sun comes last.
+  const rise = isLight || isNight ? 1 : stepped(t, T.rise, 0.6, 6)
+  box.style.transform = `translateY(${(1 - rise) * 100}%)`
+  if (bg) {
+    BG[bg].el.contentDocument.documentElement.classList.toggle('nosun', bg === 'sunset0' && t < T.sun)
+    drive(BG[bg], t)
+  }
+
+  // the conversation: what has been said by now (the cuts show the lite window)
+  const convT = isLight || isNight ? 9.4 : t
+  for (const el of $('conv').children) {
+    const at = parseFloat(el.dataset.at)
+    show(el, convT >= at)
+    if (el.id === 'card' && convT >= at) {
+      // It drops in: two steps down onto its place.
+      const s = Math.min(2, Math.floor((t - at) / 0.06))
+      el.style.transform = `translateY(${(s - 2) * -24}px)`
+      el.style.opacity = s === 0 ? 0.5 : 1
+    }
+  }
+  drive(BUSTED, t)
+
+  // the prompt box: a command types itself, then enter
+  const p = $('prompt')
+  const cursorOn = Math.floor(t / 0.5) % 2 === 0
+  const cur = `<span class="cursor" style="opacity:${cursorOn ? 1 : 0}"></span>`
+  let typed = null
+  if (!isLight && !isNight) {
+    if (t >= T.typeA && t < T.enterA) typed = CMD_A.slice(0, Math.floor((t - T.typeA) / 0.026))
+    else if (t >= T.typeB && t < T.enterB) typed = CMD_B.slice(0, Math.floor((t - T.typeB) / 0.06))
+  }
+  if (typed !== null) p.innerHTML = escapeHtml(typed) + `<span class="cursor"></span>`
+  else p.innerHTML = cur + `<span class="ph"> Reply…</span>`
+
+  // the HUD line: the wanted level, health and armor
+  const full = !isLight && !isNight && t >= T.hud
+  show($('hud'), full)
+  let n = 0
+  for (const s of T.star) if (t >= s) n++
+  STARS.forEach((f, i) => { show(f.el, full && i === n); if (i === n) drive(f, t) })
+  const busted = t >= T.busted
+  const health = busted ? 0 : [100, 70, 40, 25, 12][n]
+  const armor = busted ? 40 : [70, 70, 55, 55, 40][n]
+  $('health').innerHTML = A.meters[health]
+  $('armor').innerHTML = A.meters[armor]
+
+  // ---- the terminal
+  show($('term'), t >= T.cutTerm && !end)
+
+  // ---- the chip in the corner
+  const chip = $('chip')
+  let c = ''
+  if (t >= T.look + 0.3 && t < T.enterB) c = '<b>LITE</b> · the look'
+  else if (t >= T.enterB && t < T.cutLight) c = '<b>FULL</b> · your limits are a wanted level'
+  else if (isLight) c = '<b>LITE</b> · on light paper'
+  else if (isNight) c = '<b>LITE</b> · after dark'
+  else if (t >= T.cutTerm && !end) c = '<b>TERMINAL</b> · the same city in pixels'
+  chip.innerHTML = c
+  show(chip, !!c)
+  chip.classList.toggle('light', isLight)
+
+  // ---- the end card
+  show($('end'), end)
+  if (end) {
+    const lay = F === 'h' ? { pill: 560, repo: 720 } : { pill: 1190, repo: 1460 }
+    const pill = $('pill'), repo = $('repo')
+    pill.style.position = repo.style.position = 'absolute'
+    pill.style.top = lay.pill + 'px'
+    repo.style.top = lay.repo + 'px'
+    pill.style.visibility = t >= T.end + 0.85 ? 'visible' : 'hidden'
+    repo.style.visibility = t >= T.end + 1.1 ? 'visible' : 'hidden'
+    $('foot').style.visibility = t >= T.end + 1.1 ? 'visible' : 'hidden'
+  }
+  // Last, once the HUD is laid out: a message that no longer fits the column leaves whole.
+  const conv = $('conv')
+  const top = conv.getBoundingClientRect().top
+  for (;;) {
+    const first = [...conv.children].find(el => !el.classList.contains('off'))
+    if (!first || first.getBoundingClientRect().top >= top - 1) break
+    show(first, false)
+  }
+}
+function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;') }
+</script>
+</body>
+</html>

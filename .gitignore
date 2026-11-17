@@ -1,0 +1,11 @@
+preview/out/
+node_modules/
+.DS_Store
+.claude-plugin/types/
+# Local notes
+notes/
+dist/
+.claude/
+launch/
+# Rendered video files
+promo/out/

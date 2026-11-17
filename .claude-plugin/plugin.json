@@ -1,0 +1,152 @@
+{
+  "name": "vice-code",
+  "displayName": "Vice Code",
+  "version": "1.2.0",
+  "description": "A Miami sunset for Claude Code: the app's colors and a skyline set in symbols behind the conversation. One command adds the game: your usage limits as a wanted level, with a HUD, stats and a radio. Unofficial fan mod, not affiliated with or endorsed by Anthropic or any game publisher.",
+  "author": {
+    "name": "RebSem",
+    "url": "https://github.com/RebSem"
+  },
+  "homepage": "https://github.com/RebSem/vice-code",
+  "repository": "https://github.com/RebSem/vice-code",
+  "license": "MIT",
+  "keywords": [
+    "theme",
+    "look",
+    "backdrop",
+    "stats",
+    "fun",
+    "synthwave",
+    "miami",
+    "limits"
+  ],
+  "icon": "./.claude-plugin/icon.png",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "lite is the look alone: colors and the skyline. full adds the game: usage limits as a wanted level, a HUD above the prompt, gear on tool rows, stats. Switch any time with /vice lite and /vice full",
+      "options": [
+        "lite",
+        "full"
+      ],
+      "default": "lite"
+    },
+    "colors": {
+      "type": "boolean",
+      "title": "App colors",
+      "description": "Paint the desktop and mobile apps in the look's colors: violet stock, pink accent, in a light and a dark version",
+      "default": true
+    },
+    "backdrop": {
+      "type": "boolean",
+      "title": "Skyline backdrop",
+      "description": "Draw the skyline behind the conversation in the desktop and mobile apps. It follows the hour, and in the game it shows the wanted level: patrol lights, then a helicopter. Toggle any time with /vice backdrop",
+      "default": true
+    },
+    "paper": {
+      "type": "string",
+      "title": "Scene paper",
+      "description": "auto prints the scene on light paper in a light window and on dark stock in a dark one; pick one if the picture does not match your window (also /vice paper dark)",
+      "options": [
+        "auto",
+        "light",
+        "dark"
+      ],
+      "default": "auto"
+    },
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "auto follows the language you write prompts in",
+      "options": [
+        "auto",
+        "ru",
+        "en"
+      ],
+      "default": "auto"
+    },
+    "playerName": {
+      "type": "string",
+      "title": "Player name",
+      "description": "Name on the loading card; empty uses your account name",
+      "default": ""
+    },
+    "weapons": {
+      "type": "boolean",
+      "title": "Gear on tool rows",
+      "description": "Game: show a gear label (SHOTGUN for Bash, PISTOL for Edit...) next to each tool call",
+      "default": true
+    },
+    "spinner": {
+      "type": "boolean",
+      "title": "Miami spinner",
+      "description": "Game: replace the spinner words with Miami phrases",
+      "default": true
+    },
+    "toasts": {
+      "type": "boolean",
+      "title": "Street talk",
+      "description": "Game: show a short line now and then after a turn",
+      "default": true
+    },
+    "toastEvery": {
+      "type": "number",
+      "title": "Street talk every N turns",
+      "description": "How many finished turns between two lines; never more often than every 20 minutes",
+      "min": 1,
+      "max": 50,
+      "default": 12
+    },
+    "showCost": {
+      "type": "boolean",
+      "title": "Show cash",
+      "description": "Show the session cost in the HUD",
+      "default": true
+    },
+    "importHistory": {
+      "type": "boolean",
+      "title": "Import history",
+      "description": "Game: count past sessions from your local Claude Code transcripts (read on this machine only; Lite reads none)",
+      "default": true
+    },
+    "radioVolume": {
+      "type": "number",
+      "title": "Radio volume",
+      "description": "0 is silent, 1 is normal, up to 2 boosts (macOS)",
+      "min": 0,
+      "max": 2,
+      "default": 0.6
+    },
+    "radioUrl": {
+      "type": "string",
+      "title": "Your radio link",
+      "description": "A Spotify, Apple Music or YouTube link the 'Your radio' button opens",
+      "default": ""
+    },
+    "wanted": {
+      "type": "boolean",
+      "title": "Wanted level",
+      "description": "Game: usage limits as a wanted system: stars for the 5-hour window, armor for the week, busted when a limit runs out",
+      "default": true
+    },
+    "hud": {
+      "type": "string",
+      "title": "HUD above the prompt",
+      "description": "Game: full shows the wanted level, health, armor and cash; compact only the wanted level; off hides the line (a bust still shows)",
+      "options": [
+        "full",
+        "compact",
+        "off"
+      ],
+      "default": "full"
+    },
+    "sounds": {
+      "type": "boolean",
+      "title": "Sound effects",
+      "description": "A siren at four stars and when busted, a chime for a medkit (macOS)",
+      "default": false
+    }
+  }
+}
