@@ -1,7 +1,7 @@
 {
   "name": "vice-code",
   "displayName": "Vice Code",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "A Miami sunset for Claude Code: the app's colors and a skyline set in symbols behind the conversation. One command adds the game: your usage limits as a wanted level, with a HUD, stats and a radio. Unofficial fan mod, not affiliated with or endorsed by Anthropic or any game publisher.",
   "author": {
     "name": "RebSem",
@@ -32,6 +32,12 @@
         "full"
       ],
       "default": "lite"
+    },
+    "switch": {
+      "type": "boolean",
+      "title": "Switch above the prompt",
+      "description": "Show the Off / Look / Game switch above the prompt in the desktop and mobile apps. Hide or show it any time with /vice switch; the commands /vice off, /vice lite and /vice full work either way",
+      "default": true
     },
     "colors": {
       "type": "boolean",

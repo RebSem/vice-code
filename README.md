@@ -16,19 +16,19 @@ Unofficial fan mod. Not affiliated with or endorsed by Anthropic or any game pub
 claude plugin install vice-code --marketplace RebSem/vice-code
 ```
 
-Needs Claude Code 2.1.319 or newer (`claude update`). Open a new session. In the desktop app the window turns violet and a skyline stands behind the conversation, with one hello card that says what changed. In a terminal you get a small banner card at the top of each new conversation.
+Needs Claude Code 2.1.319 or newer (`claude update`). Open a new session and send a first message: a mod runs inside a session, so the app's own start screen shows nothing of it yet. In the desktop app the window then takes the look's colors, a skyline stands behind the conversation, one hello card says what changed, and a switch above the prompt reads **Off · Look · Game**. In a terminal you get a small banner card at the top of each new conversation.
 
 - Inside a session the same line works as a command: `/plugin install vice-code --marketplace RebSem/vice-code`, then `/reload-plugins`.
 - In the desktop app: **+** next to the prompt box → **Plugins** → **Add marketplace** `RebSem/vice-code` → **Add plugin**.
-- The installer says "17 userConfig options not yet set". That is not an error: every setting has a default.
+- The installer says "18 userConfig options not yet set". That is not an error: every setting has a default.
 
 Update with `claude plugin update vice-code@vice-code`, or turn on auto-update in `/plugin` → Marketplaces → vice-code. Remove with `claude plugin uninstall vice-code` and `claude plugin marketplace remove vice-code`. To try a local checkout for one session only: `claude --plugin-dir /path/to/vice-code`.
 
 Don't see it?
 
 1. Check the version: `claude --version` must say 2.1.319 or newer. On an older one the mod shows a single line asking you to update.
-2. Open a new session. Desktop app: the window should turn violet with a skyline behind the conversation. Terminal: a banner card should stand at the top of the conversation.
-3. If you turned the mod off with `/vice off`, it stays off until `/vice on`.
+2. Open a new session and send a message. Desktop app: the window should take the look's colors, with a skyline behind the conversation and the switch above the prompt. Terminal: a banner card should stand at the top of the conversation.
+3. If you turned the mod off (the switch, or `/vice off`), it stays off until you turn it on again (the switch, or `/vice on`).
 4. Run `claude --debug` and look for a line that starts with `vice-code:`. Add it to an issue.
 
 ## Two modes
@@ -54,7 +54,7 @@ Don't see it?
 
 ![Mock-up: the busted card in the conversation](docs/img/busted.png)
 
-Switch with `/vice full` (or the card's button) and `/vice lite`. The choice is stored and holds until you change the `mode` setting after it.
+Switch with the three buttons above the prompt in the app (**Off · Look · Game**), or with `/vice off`, `/vice lite` and `/vice full` anywhere. The choice is stored and holds until you change the `mode` setting after it.
 
 ## The game
 
@@ -79,6 +79,7 @@ The wanted level and armor need a Pro or Max plan: an API-key account has no usa
 | Hello card (Lite) | each new conversation | once, after install | each new conversation | once, after install |
 | Welcome card (Full) | yes | yes | yes | yes |
 | Busted card (Full) | yes | yes | yes | yes |
+| Off / Look / Game switch above the prompt | no | yes | no | yes |
 | HUD line and wanted level next to the prompt (Full) | yes | yes | no | no |
 | `/vice` pane (Full) | yes | yes | yes | no |
 | Sound (radio, siren, medkit chime) | macOS | yes | no | no |
@@ -93,12 +94,13 @@ All through one command, `/vice`.
 
 | Command | What it does |
 |---|---|
-| `/vice full` | Turn the game on |
-| `/vice lite` | Turn the game off, keep the look |
-| `/vice off` | Turn the whole mod off, in this session and the next ones: the look is cleared and every hook steps aside |
-| `/vice on` | Bring it back |
+| `/vice full` | The look and the game (turns the mod on if it was off) |
+| `/vice lite` | The look alone (turns the mod on if it was off) |
+| `/vice off` | Turn the whole mod off, in this session and the next ones: the look is cleared and the mod goes quiet; only the switch stays |
+| `/vice on` | Bring it back in the mode it was in |
 | `/vice paper dark`, `light`, `auto` | Pick the stock the scene prints on. `auto` follows the app's light or dark setting; the window itself keeps its own mode |
 | `/vice backdrop` | Skyline on or off |
+| `/vice switch` | Show or hide the switch above the prompt |
 | `/vice card` | Show the card again |
 | `/vice radio` | Radio on or off |
 | `/vice` | In Full: open the stats pane. In Lite: list the commands |
@@ -106,7 +108,7 @@ All through one command, `/vice`.
 | `/vice tip` | Full: next tip |
 | `/vice import` | Full: read new sessions (`/vice import full` re-reads every transcript) |
 
-A choice made with `/vice` (mode, paper, backdrop) is stored and holds until the setting of the same name is changed after it. Then the setting wins.
+A choice made with `/vice` or the switch (mode, paper, backdrop, the switch itself) is stored and holds until the setting of the same name is changed after it. Then the setting wins.
 
 ## Settings
 
@@ -115,6 +117,7 @@ Everything is in `/config` under vice-code, and everything has a default.
 | Setting | Default | What it does |
 |---|---|---|
 | `mode` | `lite` | `lite` is the look alone, `full` adds the game |
+| `switch` | on | The Off / Look / Game switch above the prompt in the desktop and mobile apps |
 | `colors` | on | Paint the desktop and mobile apps in the look's colors |
 | `backdrop` | on | The skyline behind the conversation |
 | `paper` | `auto` | The scene's stock: `auto` follows the window, or `light`, `dark` |
@@ -169,7 +172,7 @@ The mod draws everything from code. It ships no audio files, and the only images
 
 ## Development
 
-The tests (64) run in Claude Code's test kit; they pass on 2.1.319 (terminal CLI) and 2.1.325 (the desktop app's engine).
+The tests (70) run in Claude Code's test kit; they pass on 2.1.319 (terminal CLI) and 2.1.325 (the desktop app's engine).
 
 ```bash
 claude plugin test .

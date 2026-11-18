@@ -32,6 +32,7 @@ const PANE = 'vice-stats'
 const RECORDS_KEY = 'records'
 const WANTED_KEY = 'wanted'
 const BACKDROP_KEY = 'backdrop'
+const SWITCH_KEY = 'switch'
 const LEGEND_KEY = 'legend'
 /** The person's own choices, made with /vice; each wins over the setting of the same name. */
 const MODE_KEY = 'mode'
@@ -82,6 +83,7 @@ type Options = {
   wanted: boolean
   sounds: boolean
   backdrop: boolean
+  switch: boolean
   paper: Stock
   hud: 'full' | 'compact' | 'off'
 }
@@ -107,6 +109,7 @@ function readOptions(o: Readonly<Record<string, unknown>>): Options {
     wanted: b(o.wanted, true),
     sounds: b(o.sounds, false),
     backdrop: b(o.backdrop, true),
+    switch: b(o.switch, true),
     paper: o.paper === 'light' || o.paper === 'dark' ? o.paper : 'auto',
     hud: o.hud === 'compact' || o.hud === 'off' ? o.hud : 'full',
   }
@@ -253,6 +256,18 @@ let paper: Stock = 'auto'
 let isGreetingPending = false
 /** True when the engine took the colors with the last look; an engine from before them takes the scene alone. */
 let hasColors = false
+/** The Off / Look / Game switch stands above the prompt in an app window. */
+let isSwitchShown = true
+/**
+ * True from the end of a conversation (/clear, /resume) until the next one is set up.
+ * `classic.SessionStart` does that where it is heard; an app's own plugins can pass a
+ * mod's hook by on that event, so the mod also looks for itself a moment later.
+ */
+let needsSetup = false
+/** True once the mod's own check has set the pending conversation up: the start hook, if it comes later, has nothing left to do. */
+let didSelfSetup = false
+/** The tail of the mode changes in flight: see inTurn. */
+let modeChain: Promise<void> = Promise.resolve()
 /** How many prompts of a dormant session have looked at the roster, and how many may. */
 let wakeChecks = 0
 const WAKE_CHECKS = 5
@@ -351,6 +366,7 @@ async function choose<T extends string | boolean>($: EngineInterface, key: strin
 async function loadChoices($: EngineInterface): Promise<void> {
   isFull = (await choice($, MODE_KEY, opts.mode, ['lite', 'full'] as const)) === 'full'
   paper = await choice<Stock>($, PAPER_KEY, opts.paper, ['auto', 'light', 'dark'])
+  isSwitchShown = await choice($, SWITCH_KEY, opts.switch, [true, false])
   try {
     isOff = (await $.store.get(OFF_KEY)) === true
   } catch {
@@ -445,6 +461,7 @@ async function bumpRecords($: EngineInterface, change: (r: Records) => Records):
 
 /** Sets the session up in the mode that is on; a mod the person turned off sets up nothing. */
 async function startSession($: EngineInterface, isFresh: boolean, mustGreet = false): Promise<void> {
+  needsSetup = false
   if (isOff) return
   hasRetriedLook = false
   if (isFull) await startFull($, isFresh, mustGreet)
@@ -743,6 +760,41 @@ async function turnOff($: EngineInterface): Promise<void> {
   await update($, tick, n => n + 1)
 }
 
+/**
+ * Mode changes run one after another. Two presses in quick succession (Game, then Off)
+ * would otherwise overlap: the game would still be starting while the mod was being
+ * turned off, and its look and its card would land in a session the switch calls off.
+ * In turn, the last one asked for is the state that stands.
+ */
+function inTurn(job: () => Promise<void>): Promise<void> {
+  modeChain = modeChain.then(job).catch(() => undefined)
+  return modeChain
+}
+
+/** The switch's three positions: off, the look alone, the look and the game. */
+async function setMode($: EngineInterface, mode: 'off' | 'lite' | 'full'): Promise<void> {
+  if (mode === 'off') {
+    if (!isOff) await turnOff($)
+    return
+  }
+  if (isOff) {
+    // Back on, straight into the position that was pressed.
+    isFull = mode === 'full'
+    await choose($, MODE_KEY, mode, opts.mode)
+    await turnOn($)
+    return
+  }
+  if (mode === 'full') await enterFull($)
+  else await enterLite($)
+}
+
+/** Sets a new conversation up if nothing has done so since the last one ended. */
+async function setUpIfNeeded($: EngineInterface): Promise<void> {
+  if (!needsSetup || inert || isOff) return
+  await startSession($, true)
+  didSelfSetup = true
+}
+
 async function turnOn($: EngineInterface): Promise<void> {
   isOff = false
   await safeSet($, OFF_KEY, false)
@@ -1000,8 +1052,11 @@ async function wake($: EngineInterface): Promise<void> {
     // an engine that cannot say its version is new enough to try
   }
   await loadChoices($)
-  // The command and the timers first. A mod that is off keeps its command, so /vice on can bring it back.
-  const L = LABELS[(await read($, env)).lang]
+  // The language first, off or not: the switch and the command speak it even in a mod that is off.
+  const first = pickLang(null, await envLang($).catch(() => undefined), false, await seenLang($))
+  if (first !== (await read($, env)).lang) await update($, env, (v): Env => ({ ...v, lang: first }))
+  // The command and the timers next. A mod that is off keeps its command, so /vice on can bring it back.
+  const L = LABELS[first]
   await $.command
     .register({ name: 'vice', description: L.command.description, argumentHint: L.command.hint })
     .catch(err => $.ui.log(`vice-code: /vice was not registered: ${String(err)}`))
@@ -1067,7 +1122,10 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (e.source === 'clear' || e.source === 'resume' || e.source === 'fork') {
       try {
-        await startSession($, true)
+        // The hooks beneath can take seconds; by then the mod's own check (see session.end)
+        // may have set this conversation up. Once is enough: a second pass would place a second card.
+        if (didSelfSetup) didSelfSetup = false
+        else await startSession($, true)
       } catch (err) {
         $.ui.log(`vice-code: session setup failed: ${String(err).slice(0, 200)}`)
       }
@@ -1103,9 +1161,18 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('session.end', async ($, e, next) => {
-    if (inert || isOff || !isFull) return next(e)
+    if (inert || isOff) return next(e)
     // /clear and /resume switch conversations without a session.start.
-    if (e.reason === 'clear' || e.reason === 'resume') await resetConversation($)
+    if (e.reason === 'clear' || e.reason === 'resume') {
+      if (isFull) await resetConversation($)
+      // classic.SessionStart sets the next conversation up where this module hears it. In
+      // the app a plugin above can pass that hook by, so a moment later the mod checks.
+      needsSetup = true
+      didSelfSetup = false
+      $.clock.after(600, () => {
+        void setUpIfNeeded($).catch(() => undefined)
+      })
+    }
     return next(e)
   })
 
@@ -1116,6 +1183,8 @@ export const register: Register = (on, options) => {
     // The desktop app sends what the person typed through the SDK; runs nobody watches are inert already.
     const isPerson = e.origin.kind === 'composer' || e.origin.kind === 'bridge' || e.origin.kind === 'sdk'
     if (!isPerson || e.isMeta) return result
+    // A conversation that began without this module hearing of it is set up now.
+    await setUpIfNeeded($).catch(() => undefined)
     if (isFull) {
       const lv = await read($, live)
       if (!lv || lv.sessionId !== (await $.session.id())) await startFull($, true)
@@ -1285,26 +1354,34 @@ export const register: Register = (on, options) => {
     const L = LABELS[(await read($, env)).lang]
     const words = e.args.trim().toLowerCase().split(/\s+/).filter(Boolean)
     const sub = words[0] ?? ''
+    // The three positions and the switch itself answer in any state, off included.
     if (sub === 'on') {
       if (!isOff) return { text: L.command.alreadyOn }
-      await turnOn($)
+      await inTurn(() => turnOn($))
       return { text: L.command.turnedOn }
     }
-    if (isOff) return { text: L.command.isOff }
     if (sub === 'off') {
-      await turnOff($)
+      if (isOff) return { text: L.command.isOff }
+      await inTurn(() => turnOff($))
       return { text: L.command.turnedOff }
     }
     if (sub === 'full' || sub === 'game') {
-      if (isFull) return { text: L.command.alreadyFull }
-      await enterFull($)
+      if (isFull && !isOff) return { text: L.command.alreadyFull }
+      await inTurn(() => setMode($, 'full'))
       return { text: L.command.modeFull }
     }
     if (sub === 'lite') {
-      if (!isFull) return { text: L.command.alreadyLite }
-      await enterLite($)
+      if (!isFull && !isOff) return { text: L.command.alreadyLite }
+      await inTurn(() => setMode($, 'lite'))
       return { text: L.command.modeLite }
     }
+    if (sub === 'switch') {
+      isSwitchShown = !isSwitchShown
+      await choose($, SWITCH_KEY, isSwitchShown, opts.switch)
+      await update($, tick, n => n + 1)
+      return { text: isSwitchShown ? L.command.switchShown : L.command.switchHidden }
+    }
+    if (isOff) return { text: L.command.isOff }
     if (sub === 'paper') {
       const p = words[1]
       if (p !== 'light' && p !== 'dark' && p !== 'auto') return { text: L.command.paperHelp }
@@ -1397,20 +1474,50 @@ export const register: Register = (on, options) => {
 
   // The band above the prompt: one quiet line of meters, like a status line.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    // The tick is read first, so turning the game on or off redraws the band.
+    // The tick is read first, so a change of mode redraws the band.
     await read($, tick)
-    if (inert || isOff || !isFull || e.props.hasSurvey) return next(e)
+    if (inert || e.props.hasSurvey) return next(e)
     // The band is shared by every mod: draw ours and keep whatever the others draw below it.
     const others = await next(e)
+    // The switch: Off, Look, Game. In an app window it stands above the prompt in every
+    // state, off included: a switch that hid itself when off could not be turned back on.
+    // A terminal keeps its band for the game; there the same three are /vice commands.
+    // It is a row of the app's own buttons, the position in force drawn as the main one.
+    const S = LABELS[(await read($, env)).lang].switch
+    // The press hands its promise back: the surface redraws the row once the change is done, not before.
+    const press = (mode: 'off' | 'lite' | 'full') => () => inTurn(() => setMode($, mode))
+    let toggle = null
+    if (isSwitchShown && (e.surface === 'desktop' || e.surface === 'mobile')) {
+      const { Box, Button, Text } = $.ui.resolve(e)
+      toggle = (
+        <Box key="switch" flexDirection="row" alignItems="center" gap="xs">
+          <Text size="footnote" dimColor>Vice Code</Text>
+          <Button key="mode-off" label={S.off} variant={isOff ? 'primary' : 'secondary'} onPress={press('off')} />
+          <Button key="mode-lite" label={S.lite} variant={!isOff && !isFull ? 'primary' : 'secondary'} onPress={press('lite')} />
+          <Button key="mode-full" label={S.full} variant={!isOff && isFull ? 'primary' : 'secondary'} onPress={press('full')} />
+        </Box>
+      )
+    }
+    const alone = () => {
+      if (toggle === null || (e.surface !== 'desktop' && e.surface !== 'mobile')) return others
+      const { Box } = $.ui.resolve(e)
+      return (
+        <Box flexDirection="column" gap="xs">
+          {toggle}
+          {others}
+        </Box>
+      )
+    }
+    if (isOff || !isFull) return alone()
     const s = await snapshot($)
     const L = LABELS[s.env.lang]
     const busted = opts.wanted ? bustedData(s) : null
-    // With the HUD off the band stays empty, except while busted: that line says why Claude is quiet.
-    if (opts.hud === 'off' && !busted) return others
+    // With the HUD off the band holds the switch alone, except while busted: that line says why Claude is quiet.
+    if (opts.hud === 'off' && !busted) return alone()
     const hd = hudData(s, opts.showCost, opts.wanted)
     const isCompact = opts.hud === 'compact'
     // Compact is the wanted level alone: an account without usage windows has nothing to show.
-    if (isCompact && hd.wanted === null && !busted) return others
+    if (isCompact && hd.wanted === null && !busted) return alone()
     const stars = hd.wanted?.stars ?? 0
     const starsMode = hd.wanted?.blink ? 'fade' : s.nowMs < (s.ui.flashUntil ?? 0) ? 'flash' : 'still'
     const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v)}%`)
@@ -1426,6 +1533,7 @@ export const register: Register = (on, options) => {
               <Text size="footnote" weight="medium" color="warning">{busted.until}</Text>
               <Button key="stats" label={L.buttons.stats} variant="secondary" onPress={() => void openStats($).catch(() => undefined)} />
               <Button key="radio" label={s.radio.playing ? L.buttons.radioOff : L.buttons.radioOn} variant="secondary" onPress={() => void toggleRadio($).catch(() => undefined)} />
+              {toggle}
             </Box>
             {others}
           </Box>
@@ -1454,6 +1562,7 @@ export const register: Register = (on, options) => {
             {!isCompact && hd.showArmor && meter('armor', hd.armorLabel, hd.armor, hd.noLimit)}
             {!isCompact && hd.money !== null && <Text size="footnote" dimColor tabular>{hd.money}</Text>}
             {!isCompact && hd.radio.isOn && <Text size="footnote" dimColor>{`♪ ${hd.radio.track}`}</Text>}
+            {toggle}
           </Box>
           {others}
         </Box>
@@ -1502,7 +1611,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    return others
+    return alone()
   })
 
   // Rows in the conversation: the welcome card at the start, and a busted card where
@@ -1569,7 +1678,7 @@ export const register: Register = (on, options) => {
             </Text>
           )}
           <Box flexDirection="row" gap="sm" flexWrap="wrap" alignItems="center">
-            {!isFull && <Button key="game" label={L.buttons.gameOn} variant="primary" onPress={() => void enterFull($).catch(() => undefined)} />}
+            {!isFull && <Button key="game" label={L.buttons.gameOn} variant="primary" onPress={() => inTurn(() => enterFull($))} />}
             <Button key="radio" label={isPlaying ? L.buttons.radioOff : L.buttons.radioOn} variant="secondary" onPress={() => void toggleRadio($).catch(() => undefined)} />
             <Text size="caption" dimColor>{d.repo}</Text>
           </Box>

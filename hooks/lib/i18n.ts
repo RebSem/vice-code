@@ -64,6 +64,8 @@ export type Labels = {
    * Lite's hello card. `body` is for a window that draws the look; `bodyPlain` for a
    * terminal or an editor, which draw neither the colors nor the scene.
    */
+  /** The switch above the prompt: off, the look alone, the look and the game. */
+  switch: { off: string; lite: string; full: string }
   lite: { title: string; body: string; bodyScene: string; bodyPlain: string; hint: string; hintShort: string; fan: string }
   /** Under the welcome card on the terminal, where a row in the conversation has no hotkeys. */
   welcomeHint: string
@@ -89,6 +91,8 @@ export type Labels = {
     alreadyLite: string
     modeLite: string
     paperHelp: string
+    switchShown: string
+    switchHidden: string
     paperSet: Record<'auto' | 'light' | 'dark', string>
     /** In Lite, to a command that belongs to the game. */
     gameOnly: string
@@ -195,9 +199,10 @@ export const LABELS: Record<Lang, Labels> = {
       nextTip: 'Ещё совет',
       gameOn: 'Включить игру',
     },
+    switch: { off: 'Выкл', lite: 'Оформление', full: 'Игра' },
     lite: {
       title: 'Добро пожаловать в Майами.',
-      body: 'Claude Code теперь в цветах заката, а за разговором стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке выше.',
+      body: 'Claude Code теперь в цветах заката, а за разговором стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке выше. Переключатель над полем ввода выключает всё это или включает игру.',
       bodyScene: 'За разговором теперь стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке выше.',
       bodyPlain: 'Цвета и город за разговором рисуют десктопное и мобильное приложения. Здесь можно включить игру: /vice full',
       hint: '/vice full — игра: розыск, шкалы, статистика · /vice paper dark — под тёмное окно · /vice off — выключить',
@@ -210,7 +215,7 @@ export const LABELS: Record<Lang, Labels> = {
     sceneAlt: 'Майами',
     command: {
       description: 'Vice Code: оформление в духе Майами и игра поверх него: розыск, статистика, радио',
-      hint: '[full|lite|stats|wanted|card|radio|tip|backdrop|paper|import|off|help]',
+      hint: '[full|lite|off|on|stats|wanted|card|radio|tip|backdrop|paper|switch|import|help]',
       statsOpened: 'Статистика Vice Code открыта в панели.',
       statsNotPlaced: reason => `Панель пока не показана (${reason}). Расширь окно или открой её ещё раз.`,
       cardShown: 'Карточка — в конце разговора.',
@@ -219,7 +224,7 @@ export const LABELS: Record<Lang, Labels> = {
       backdropNone: reason => `Фон здесь не рисуется (${reason}). Он есть в десктопном и мобильном приложении.`,
       alreadyOn: 'Vice Code уже включён.',
       turnedOn: 'Vice Code снова включён.',
-      isOff: 'Vice Code выключен. Включить: /vice on',
+      isOff: 'Vice Code выключен. Включить: /vice on (или сразу /vice lite, /vice full)',
       turnedOff: 'Vice Code выключен: ни оформления, ни игры, в этой сессии и в следующих. Включить: /vice on',
       alreadyFull: 'Игра уже включена. Статистика: /vice stats · тихая версия: /vice lite',
       modeFull: 'Игра включена: розыск, шкалы над полем ввода, оружие у инструментов, статистика. Тихая версия: /vice lite',
@@ -231,9 +236,11 @@ export const LABELS: Record<Lang, Labels> = {
         light: 'Сцена теперь на светлой бумаге. Окно остаётся в своём режиме; /vice paper auto вернёт подстройку под окно.',
         auto: 'Сцена снова подстраивается под окно.',
       },
+      switchShown: 'Переключатель над полем ввода показан. Скрыть: /vice switch',
+      switchHidden: 'Переключатель над полем ввода скрыт. Вернуть: /vice switch. Команды те же: /vice off, /vice lite, /vice full, /vice on.',
       gameOnly: 'Это часть игры. Включить: /vice full',
       helpLite:
-        '/vice full — включить игру: розыск, шкалы, статистика\n/vice paper dark|light|auto — подогнать сцену под окно\n/vice backdrop — включить или выключить город за разговором\n/vice radio — включить или выключить радио\n/vice card — показать карточку ещё раз\n/vice off — выключить Vice Code',
+        '/vice full — включить игру: розыск, шкалы, статистика\n/vice paper dark|light|auto — подогнать сцену под окно\n/vice backdrop — включить или выключить город за разговором\n/vice switch — показать или скрыть переключатель над полем ввода\n/vice radio — включить или выключить радио\n/vice card — показать карточку ещё раз\n/vice off — выключить Vice Code',
       radioOn: 'Радио в эфире. Выключить: /vice radio',
       radioOff: 'Радио выключено.',
       radioNoPlayer: 'Здесь нет проигрывателя. В терминале радио играет только на macOS.',
@@ -242,7 +249,7 @@ export const LABELS: Record<Lang, Labels> = {
       importOff: 'Импорт истории выключен в /config (vice-code → Import history).',
       importFailed: reason => `Архив не поднялся: ${reason}`,
       help:
-        '/vice — статистика в панели\n/vice wanted — досье: розыск, броня, аресты, аптечки\n/vice card — показать карточку\n/vice backdrop — включить или выключить город за разговором (десктоп)\n/vice paper dark|light|auto — подогнать сцену под окно\n/vice radio — включить или выключить радио\n/vice tip — следующий совет\n/vice import — дочитать новые сессии\n/vice import full — пересчитать всю историю\n/vice lite — тихая версия: только цвета и город\n/vice off — выключить Vice Code',
+        '/vice — статистика в панели\n/vice wanted — досье: розыск, броня, аресты, аптечки\n/vice card — показать карточку\n/vice backdrop — включить или выключить город за разговором (десктоп)\n/vice paper dark|light|auto — подогнать сцену под окно\n/vice radio — включить или выключить радио\n/vice tip — следующий совет\n/vice import — дочитать новые сессии\n/vice import full — пересчитать всю историю\n/vice lite — тихая версия: только цвета и город\n/vice switch — показать или скрыть переключатель над полем ввода\n/vice off — выключить Vice Code',
     },
     dayNames: 'дн.',
     wanted: {
@@ -342,9 +349,10 @@ export const LABELS: Record<Lang, Labels> = {
       nextTip: 'Next tip',
       gameOn: 'Turn on the game',
     },
+    switch: { off: 'Off', lite: 'Look', full: 'Game' },
     lite: {
       title: 'Welcome to Miami.',
-      body: 'Claude Code now wears the sunset: its colors, and a skyline set in symbols behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture above.',
+      body: 'Claude Code now wears the sunset: its colors, and a skyline set in symbols behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture above. The switch above the prompt turns all of it off, or turns the game on.',
       bodyScene: 'A skyline set in symbols now stands behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture above.',
       bodyPlain: 'The colors and the skyline are drawn by the desktop and mobile apps. Here you can turn on the game: /vice full',
       hint: '/vice full — the game: wanted level, HUD, stats · /vice paper dark — match a dark window · /vice off',
@@ -357,7 +365,7 @@ export const LABELS: Record<Lang, Labels> = {
     sceneAlt: 'Miami',
     command: {
       description: 'Vice Code: a Miami look, and a game on top of it: wanted level, stats, radio',
-      hint: '[full|lite|stats|wanted|card|radio|tip|backdrop|paper|import|off|help]',
+      hint: '[full|lite|off|on|stats|wanted|card|radio|tip|backdrop|paper|switch|import|help]',
       statsOpened: 'Vice Code stats are open in the pane.',
       statsNotPlaced: reason => `The pane is not shown yet (${reason}). Widen the window or open it again.`,
       cardShown: 'The welcome card is at the end of the conversation.',
@@ -366,7 +374,7 @@ export const LABELS: Record<Lang, Labels> = {
       backdropNone: reason => `No backdrop here (${reason}). It shows in the desktop and mobile apps.`,
       alreadyOn: 'Vice Code is already on.',
       turnedOn: 'Vice Code is back on.',
-      isOff: 'Vice Code is off. Turn it on: /vice on',
+      isOff: 'Vice Code is off. Turn it on: /vice on (or straight to /vice lite, /vice full)',
       turnedOff: 'Vice Code is off: no look and no game, in this session and the next ones. Turn it on: /vice on',
       alreadyFull: 'The game is already on. Stats: /vice stats · the quiet version: /vice lite',
       modeFull: 'Game on: wanted level, a HUD above the prompt, gear on tool rows, stats. The quiet version: /vice lite',
@@ -378,9 +386,11 @@ export const LABELS: Record<Lang, Labels> = {
         light: 'The scene now prints on light paper. The window keeps its own mode; /vice paper auto goes back to following it.',
         auto: 'The scene follows the window again.',
       },
+      switchShown: 'The switch above the prompt is shown. Hide it: /vice switch',
+      switchHidden: 'The switch above the prompt is hidden. Bring it back: /vice switch. The commands stay: /vice off, /vice lite, /vice full, /vice on.',
       gameOnly: 'That is part of the game. Turn it on: /vice full',
       helpLite:
-        '/vice full — turn on the game: wanted level, HUD, stats\n/vice paper dark|light|auto — match the scene to the window\n/vice backdrop — skyline on or off\n/vice radio — radio on or off\n/vice card — show the card again\n/vice off — turn Vice Code off',
+        '/vice full — turn on the game: wanted level, HUD, stats\n/vice paper dark|light|auto — match the scene to the window\n/vice backdrop — skyline on or off\n/vice switch — show or hide the switch above the prompt\n/vice radio — radio on or off\n/vice card — show the card again\n/vice off — turn Vice Code off',
       radioOn: 'Radio is on air. Turn it off: /vice radio',
       radioOff: 'Radio is off.',
       radioNoPlayer: 'No audio player here. In a terminal the radio plays on macOS only.',
@@ -389,7 +399,7 @@ export const LABELS: Record<Lang, Labels> = {
       importOff: 'History import is off in /config (vice-code → Import history).',
       importFailed: reason => `The archive did not load: ${reason}`,
       help:
-        '/vice — stats in the pane\n/vice wanted — rap sheet: wanted level, armor, busts, medkits\n/vice card — show the welcome card\n/vice backdrop — skyline on or off (desktop app)\n/vice paper dark|light|auto — match the scene to the window\n/vice radio — radio on or off\n/vice tip — next tip\n/vice import — read new sessions\n/vice import full — recount all history\n/vice lite — the quiet version: colors and skyline only\n/vice off — turn Vice Code off',
+        '/vice — stats in the pane\n/vice wanted — rap sheet: wanted level, armor, busts, medkits\n/vice card — show the welcome card\n/vice backdrop — skyline on or off (desktop app)\n/vice paper dark|light|auto — match the scene to the window\n/vice radio — radio on or off\n/vice tip — next tip\n/vice import — read new sessions\n/vice import full — recount all history\n/vice lite — the quiet version: colors and skyline only\n/vice switch — show or hide the switch above the prompt\n/vice off — turn Vice Code off',
     },
     dayNames: 'd',
     wanted: {

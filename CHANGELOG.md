@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0 — 2026-11-18
+
+A switch you can see.
+
+### Added
+
+- **Off · Look · Game, above the prompt.** In the desktop and mobile apps a row of three buttons stands above the prompt, the position in force drawn as the main one. Off clears the look and silences the mod, Look is Lite, Game is Full. The row stays when the mod is off, so the same switch turns it back on. `/vice switch` or the `switch` setting hides it. `/vice off`, `/vice lite` and `/vice full` do the same three things anywhere, and the last two now also turn a mod that is off back on, straight into that mode. A terminal keeps its band for the game and uses the commands. Changes of mode run one after another, so two quick presses end in the state pressed last.
+
+### Fixed
+
+- **A new conversation is set up even when the mod is not told about it.** In the desktop app a plugin of the app's own passes a mod's `classic.SessionStart` hook by, so after `/clear` the mod never set itself up again. It now checks for itself a moment after a conversation ends, and again at the first prompt; where the start hook does arrive, late or not, the conversation is still set up once.
+- A mod that starts in the off state speaks the right language: the switch and the command no longer fall back to English.
+
+### Changed
+
+- The README and the hello card say where to look: a mod runs inside a session, so the app's own start screen shows nothing of it until the first message is sent.
+
+Tests: 70, passing on Claude Code 2.1.319 and 2.1.325. The plugin now has 18 settings.
+
 ## 1.2.1 — 2026-11-18
 
 What two checks against the app's own engine turned up, a few hours after 1.2.0.

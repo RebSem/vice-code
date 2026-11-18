@@ -183,6 +183,15 @@ const id = (p: string) => `${p}${++uid}`
 /** A scene as an image: its own document, so its styles stay inside it and its CSS animates it. */
 const img = (svg: string, alt: string) => `<img alt="${esc(alt)}" src="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}">`
 
+/** The switch above the prompt, as the AbovePrompt hook draws it: the position in force is the main button. */
+function deskSwitch(lang: Lang, mode: 'off' | 'lite' | 'full'): string {
+  const S = LABELS[lang].switch
+  return `<span class="grp sw"><span class="dim">Vice Code</span>${(['off', 'lite', 'full'] as const).map(m => `<span class="btn${m === mode ? ' on' : ''}">${esc(S[m])}</span>`).join('')}</span>`
+}
+
+/** The band of a window in Lite: the switch alone. */
+const liteBand = (lang: Lang) => `<div class="band">${deskSwitch(lang, 'lite')}</div>`
+
 /** The desktop band: one quiet line, as the mod's AbovePrompt hook lays it out. */
 function deskBand(s: Snapshot, flash: boolean): string {
   const L = LABELS[s.env.lang]
@@ -190,7 +199,7 @@ function deskBand(s: Snapshot, flash: boolean): string {
   if (b) {
     return (
       `<div class="band"><span class="bad sb">${esc(L.wanted.bustedShort)}</span><span>${esc(b.why)}</span><span class="warn md">${esc(b.until)}</span>` +
-      `<span class="btn">${esc(L.buttons.stats)}</span><span class="btn">${esc(L.buttons.radioOn)}</span></div>`
+      `<span class="btn">${esc(L.buttons.stats)}</span><span class="btn">${esc(L.buttons.radioOn)}</span>${deskSwitch(s.env.lang, 'full')}</div>`
     )
   }
   const hd = hudData(s, true, true)
@@ -208,6 +217,7 @@ function deskBand(s: Snapshot, flash: boolean): string {
     meter(hd.armorLabel, hd.armor) +
     (hd.money ? `<span class="dim num">${esc(hd.money)}</span>` : '') +
     (hd.radio.isOn ? `<span class="dim">♪ ${esc(hd.radio.track)}</span>` : '') +
+    deskSwitch(s.env.lang, 'full') +
     `</div>`
   )
 }
@@ -430,10 +440,10 @@ function mocks(lang: Lang): Record<string, string> {
   return {
     // Before: the app as it comes, with the install line typed.
     before: deskWindow(lang, 'dark', plainWork, '', null, { isStock: true, typed: '/plugin install vice-code --marketplace RebSem/vice-code' }),
-    liteHello: deskWindow(lang, 'dark', deskHello(lang, NOW, 'dark'), '', null, { back: { tod: 'sunset', heat: 0 } }),
-    liteWork: deskWindow(lang, 'dark', plainWork, '', null, { back: { tod: 'night', heat: 0 } }),
-    liteLight: deskWindow(lang, 'light', plainWork, '', null, { back: { tod: 'day', heat: 0 } }),
-    liteDawn: deskWindow(lang, 'light', deskHello(lang, times.dawn, 'light'), '', null, { back: { tod: 'dawn', heat: 0 } }),
+    liteHello: deskWindow(lang, 'dark', deskHello(lang, NOW, 'dark'), liteBand(lang), null, { back: { tod: 'sunset', heat: 0 } }),
+    liteWork: deskWindow(lang, 'dark', plainWork, liteBand(lang), null, { back: { tod: 'night', heat: 0 } }),
+    liteLight: deskWindow(lang, 'light', plainWork, liteBand(lang), null, { back: { tod: 'day', heat: 0 } }),
+    liteDawn: deskWindow(lang, 'light', deskHello(lang, times.dawn, 'light'), liteBand(lang), null, { back: { tod: 'dawn', heat: 0 } }),
     welcome: deskWindow(lang, 'dark', deskWelcome(calm), deskBand(calm, false), null, { back: { tod: 'sunset', heat: 0 } }),
     plain: deskWindow(lang, 'light', deskWelcome(day), deskBand(day, false), null, { back: { tod: 'day', heat: 0 } }),
     work: deskWindow(
@@ -465,7 +475,7 @@ const install = [
   ['ok', '✔ Successfully added marketplace: vice-code (declared in user settings)'],
   ['', 'Installing plugin "vice-code@vice-code"...'],
   ['ok', '✔ Successfully installed plugin: vice-code@vice-code (scope: user)'],
-  ['dim', '17 userConfig options not yet set — run /plugin configure vice-code@vice-code in Claude Code, or pass --config KEY=VALUE.'],
+  ['dim', '18 userConfig options not yet set — run /plugin configure vice-code@vice-code in Claude Code, or pass --config KEY=VALUE.'],
   ['$', 'claude'],
 ]
   .map(([k, t]) => (k === '$' ? `<span class="dim">$</span> <span class="b">${esc(t ?? '')}</span>` : `<span class="${k}">${esc(t ?? '')}</span>`))

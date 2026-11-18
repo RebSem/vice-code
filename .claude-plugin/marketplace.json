@@ -10,7 +10,7 @@
       "name": "vice-code",
       "source": "./",
       "description": "A Miami sunset for Claude Code: the app's colors and a skyline set in symbols behind the conversation. One command adds the game: your usage limits as a wanted level, with a HUD, stats and a radio. Unofficial fan mod, not affiliated with or endorsed by Anthropic or any game publisher.",
-      "version": "1.2.1",
+      "version": "1.3.0",
       "category": "fun",
       "tags": [
         "theme",

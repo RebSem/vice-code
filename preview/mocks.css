@@ -86,6 +86,7 @@ figcaption, .cap2 { color: var(--muted); font-size: 14px; max-width: 72ch }
 .glass .band { border-radius: 10px; padding: 8px 12px }
 .grp { display: inline-flex; align-items: center; gap: 7px }
 .grp svg { display: block; flex: none }
+.sw { gap: 4px; margin-left: auto } .sw .dim { margin-right: 4px } .sw .btn { font-size: 12px; padding: 3px 9px }
 .composer { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; min-height: 76px; padding: 12px 14px; border: 1px solid var(--app-line); border-radius: 14px; background: var(--app-panel) }
 .mode { font-size: 12px; color: var(--app-dim); text-align: right }
 .you { align-self: flex-end; max-width: 80%; background: var(--app-glass); border-radius: 12px; padding: 8px 12px }

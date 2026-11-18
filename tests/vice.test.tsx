@@ -79,7 +79,7 @@ function stubEngine(on: On, stubs: Stubs = {}) {
   let rosterReads = 0
   // What the mod asked of the machine: processes run and folders listed.
   const runs: string[] = []
-  const world = { surfaces: stubs.surfaces ?? ['desktop'], isLookDrawn: stubs.isLookDrawn ?? true }
+  const world = { surfaces: stubs.surfaces ?? ['desktop'], isLookDrawn: stubs.isLookDrawn ?? true, sessionId: 'live-session' }
   on('session.version', () => ({ value: { version: stubs.engine ?? '2.1.321', base: stubs.engine ?? '2.1.321' } as never }))
   on('ui.place', (_, e) => {
     placed.push(e.id)
@@ -107,7 +107,8 @@ function stubEngine(on: On, stubs: Stubs = {}) {
   })
   mock.store(on, stubs.store)
   mock.env(on, { HOME: '/home/user', LANG: 'en_US.UTF-8', USER: 'alex' })
-  on('session.id', () => ({ value: 'live-session' }))
+  on('session.id', () => ({ value: world.sessionId }))
+  on('session.end', () => ({ sessionId: world.sessionId }) as never)
   on('session.root', () => ({ value: '/home/user/vice-code' }))
   on('session.turns', () => ({ value: stubs.turnsSoFar ?? 0 }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
@@ -1158,4 +1159,117 @@ test('the card speaks of the colors only where the engine took them', { options:
   expect(await card.find({ type: 'Text', text: /skyline set in symbols/ })).toBeDefined()
   expect(await card.find({ type: 'Text', text: /its colors/ }), 'no colors were taken').toBeUndefined()
   await card.unmount()
+})
+
+// ---------- the switch above the prompt ----------
+
+test('an app window has a switch above the prompt: Off, Look, Game', { options: { language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const main = async () => {
+    const on3 = await Promise.all(['mode-off', 'mode-lite', 'mode-full'].map(key => band.find({ key })))
+    return on3.map(b => (b?.props.variant === 'primary' ? b.text : '')).join('')
+  }
+  expect(await main(), 'Lite is the position in force').toBe('Look')
+  expect(await band.find({ type: 'Text', text: /engine/ }), 'other mods keep their rows').toBeDefined()
+
+  await band.press({ key: 'mode-full' })
+  await eng.settle()
+  expect(await main()).toBe('Game')
+  expect(await band.find({ type: 'Text', text: 'Health' }), 'the HUD shares the line with the switch').toBeDefined()
+
+  await band.press({ key: 'mode-off' })
+  await eng.settle()
+  expect(await main(), 'the switch stays when the mod is off, so it can be turned back on').toBe('Off')
+  expect(await band.find({ type: 'Text', text: 'Health' })).toBeUndefined()
+  expect(eng.themes.at(-1)).toBe('clear')
+
+  await band.press({ key: 'mode-lite' })
+  await eng.settle()
+  expect(await main()).toBe('Look')
+  expect(eng.themes.at(-1), 'the look is back').toBe('sunset')
+  expect(await band.find({ type: 'Text', text: 'Health' }), 'and the game is not').toBeUndefined()
+  await band.unmount()
+
+  // A phone gets the same switch; a terminal keeps its band for the game.
+  const phone = await $.ui.mount({ ...BAND, surface: 'mobile' })
+  expect(await phone.find({ key: 'mode-off' })).toBeDefined()
+  await phone.unmount()
+  const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await term.find({ key: 'mode-off' })).toBeUndefined()
+  await term.unmount()
+})
+
+test('the switch can be hidden, by the setting or by /vice switch', { options: { language: 'en', switch: false } }, async ($, on) => {
+  stubEngine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await band.find({ key: 'mode-off' }), 'hidden by the setting').toBeUndefined()
+  expect((await $.command.run({ command: 'vice', args: 'switch', ...COMMAND })).text).toContain('is shown')
+  expect(await band.find({ key: 'mode-off' }), 'shown without a new mount').toBeDefined()
+  expect((await $.command.run({ command: 'vice', args: 'switch', ...COMMAND })).text).toContain('is hidden')
+  expect(await band.find({ key: 'mode-off' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('a new conversation is set up even when the start hook is passed by', { options: { language: 'en' } }, async ($, on) => {
+  // In the app a plugin above can send classic.SessionStart on past this module.
+  const eng = stubEngine(on, { store: { welcomed: 1 }, surfaces: ['terminal'], isLookDrawn: false })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(eng.placed).toHaveLength(1)
+  await $.session.end({ reason: 'clear' } as never)
+  eng.world.sessionId = 'next-session'
+  await eng.advance(1000)
+  await eng.settle()
+  expect(eng.placed, 'the next conversation got its card without the hook').toHaveLength(2)
+  // Where the hook is heard, it does the work and the check finds nothing left to do.
+  await $.session.end({ reason: 'clear' } as never)
+  await $.classic.SessionStart({ source: 'clear' } as never)
+  await eng.advance(1000)
+  await eng.settle()
+  expect(eng.placed).toHaveLength(3)
+})
+
+test('Game and then Off pressed in one breath end with the mod off', { options: { language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  // Neither press waits for the other: the changes still run in turn.
+  await Promise.all([band.press({ key: 'mode-full' }), band.press({ key: 'mode-off' })])
+  await eng.settle()
+  expect(eng.themes.at(-1), 'the look is cleared last').toBe('clear')
+  expect((await band.find({ key: 'mode-off' }))?.props.variant).toBe('primary')
+  expect(await band.find({ type: 'Text', text: 'Health' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('a mod that starts off still speaks the language and takes the commands that turn it on', { options: { language: 'ru' } }, async ($, on) => {
+  const eng = stubEngine(on, { store: { off: true } })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await band.find({ key: 'mode-off' }))?.text, 'the switch is in Russian although nothing was set up').toBe('Выкл')
+  // The switch can be hidden and shown while off, and /vice full turns the mod on straight into the game.
+  expect((await $.command.run({ command: 'vice', args: 'switch', ...COMMAND })).text).toContain('скрыт')
+  expect((await $.command.run({ command: 'vice', args: 'switch', ...COMMAND })).text).toContain('показан')
+  expect((await $.command.run({ command: 'vice', args: 'stats', ...COMMAND })).text, 'the rest still waits').toContain('/vice on')
+  expect((await $.command.run({ command: 'vice', args: 'full', ...COMMAND })).text).toContain('Игра включена')
+  expect(eng.themes).toEqual(['sunset'])
+  expect((await band.find({ key: 'mode-full' }))?.props.variant).toBe('primary')
+  await band.unmount()
+})
+
+test('a slow start hook does not make the mod set a conversation up twice', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(eng.placed.filter(id => id.startsWith('welcome-'))).toHaveLength(1)
+  await $.session.end({ reason: 'clear' } as never)
+  eng.world.sessionId = 'second-conversation'
+  // The mod's own check comes first...
+  await eng.advance(1000)
+  await eng.settle()
+  expect(eng.placed.filter(id => id.startsWith('welcome-'))).toHaveLength(2)
+  // ...and the start hook, held up by the hooks beneath it, arrives after: nothing more to do.
+  await $.classic.SessionStart({ source: 'clear' } as never)
+  expect(eng.placed.filter(id => id.startsWith('welcome-')), 'one card for the conversation').toHaveLength(2)
 })
