@@ -7,7 +7,8 @@ import { join } from 'node:path'
 
 import { meterSvg, starsSvg } from '../hooks/lib/card'
 import { sound } from '../hooks/lib/synth'
-import { backdropSvg, bustedSvg, scenePixels } from '../hooks/lib/tiles'
+import { backdropSvg } from '../hooks/lib/dusk'
+import { bustedSvg, scenePixels } from '../hooks/lib/tiles'
 
 const out = process.argv[2]
 if (!out) throw new Error('usage: node assets.mjs <work folder>')

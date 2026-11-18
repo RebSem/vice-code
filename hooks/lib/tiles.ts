@@ -1,12 +1,9 @@
-// Miami at dusk on a cell grid. One technique for every picture the mod has: the backdrop
-// behind the desktop window, the banner of the welcome card, the busted banner, the icon
-// and the terminal's pixels.
+// Miami at dusk on a coarse cell grid: the busted banner, the icon and the terminal's
+// pixels. The backdrop behind the window and the banner of the cards are drawn at a finer
+// grain in dusk.ts.
 //
-// The sky is a field of glyphs that brightens toward the horizon, so the sunset is drawn in
-// characters; the city, the palms and the slatted sun are square tiles, so the silhouette
-// stays clear. The field answers the pointer where a surface lets it through (CSS :hover,
-// no script): a banner in a card does; the backdrop does not, since the desktop app lays it
-// in an inert layer under the conversation. There a slow wave walks through the sky.
+// The sky is a field of glyphs that brightens toward the horizon; the city, the palms and
+// the slatted sun are square tiles, so the silhouette stays clear at any size.
 //
 // Pure string building, the same every time: shapes are drawn from geometry and
 // rasterised onto the grid.
@@ -103,45 +100,6 @@ type Plan = {
   ground: readonly (readonly [x0: number, x1: number])[]
   /** The columns the words sit over: glyphs print fainter there. */
   quiet: readonly [x0: number, x1: number]
-}
-
-/**
- * The whole window, 1600 × 1000. Art-deco towers and palms stand at the two sides, the
- * slatted sun sits low on the right, and the middle holds only the sky and a far shore.
- */
-const WIDE: Plan = {
-  cols: 100,
-  rows: 63,
-  horizon: 54,
-  // The sun stands at the right edge, half out of the picture: in a wide window that is
-  // the margin beside the reading column, not under it.
-  sun: [91, 46, 12.5],
-  // Two tall palms frame the picture; one slim palm and one tall one stand in front of the sun, the way a postcard has them.
-  palms: [[3, 63, 34, 3], [10, 63, 23, -2], [97, 63, 31, -3], [85, 55, 14, -2], [37, 54, 6, 1]],
-  towers: [
-    ['slab', 13, 4, 11], ['deco', 18, 7, 23], ['hotel', 25, 5, 8], ['slab', 29, 2, 5],
-    ['slab', 70, 3, 8], ['deco', 73, 5, 15], ['hotel', 78, 4, 5],
-  ],
-  far: [[31, 67, 4]],
-  clouds: [[66, 33, 16], [90, 29, 12], [22, 14, 14]],
-  ground: [],
-  // The reading column is not in the middle of the window: a sidebar pushes it to the
-  // right, a pane to the left. So all but the edges is printed quietly.
-  quiet: [20, 94],
-}
-
-/** A banner, 45 × 10 cells: the same scene with everything pulled in. */
-const STRIP: Plan = {
-  cols: 45,
-  rows: 10,
-  horizon: 8,
-  sun: [30, 8.6, 6],
-  palms: [[4, 10, 7, 1]],
-  towers: [['deco', 9, 3, 5], ['hotel', 12, 4, 2], ['slab', 37, 2, 4], ['deco', 39, 4, 6], ['hotel', 43, 2, 2]],
-  far: [[16, 23, 1]],
-  clouds: [[27, 4, 9]],
-  ground: [],
-  quiet: [0, 0],
 }
 
 /** The busted banner: the left is kept clear for the word, the moon and the city stand on the right. */
@@ -490,25 +448,6 @@ const MOTION =
   `.tide{animation:tide 16s steps(8) infinite}.tide2{animation:tide 24s steps(8) infinite reverse}` +
   `.cr{animation:cop .9s steps(1) 14}.cu{animation:cop .9s steps(1) .45s 14}`
 
-/**
- * A narrow window shows the middle of the picture, where little stands. So the two
- * sides step in as the box gets narrower, and on a phone held upright the sun and its
- * palms take the middle. The rule reads the scene's own box, not the device.
- */
-const SIDES =
-  `@media (max-aspect-ratio:13/10){.L{transform:translateX(144px)}.R{transform:translateX(-144px)}}` +
-  `@media (max-aspect-ratio:1/1){.L{transform:translateX(288px)}.R{transform:translateX(-288px)}}` +
-  `@media (max-aspect-ratio:3/4){.L{transform:translateX(400px)}.R{transform:translateX(-416px)}}` +
-  `@media (max-aspect-ratio:9/16){.L{opacity:0}.R{transform:translateX(-496px)}}` +
-  // Narrow, the words always lie over the sun: it steps back further.
-  `@media (max-aspect-ratio:1/1){.S{opacity:calc(var(--so)*.7)}}`
-
-/** A cloud drifts four pixels at a step, there and back. */
-const drift = (i: number, cell: number) => {
-  const span = cell * (7 + i * 3)
-  return `@keyframes drift${i}{from{transform:translateX(${-cell * (3 + i)}px)}to{transform:translateX(${cell * (4 + i * 2)}px)}}.c${i}{animation:drift${i} ${150 + i * 45}s steps(${Math.max(8, Math.round(span / 4))}) infinite alternate}`
-}
-
 function starsPath(plan: Plan, cell: number): string {
   let out = ''
   for (let g = 0; g < 3; g++) {
@@ -650,37 +589,7 @@ function layers(s: Scene, cell: number, o: LayerOptions): string {
   )
 }
 
-const WIDE_SCENE = buildScene(WIDE)
-const STRIP_SCENE = buildScene(STRIP)
 const BANNER_SCENE = buildScene(BANNER)
-
-/**
- * The backdrop for the whole window: 1600 × 1000, cropped to fill. `heat` is the wanted
- * level (patrol lights from three stars, a helicopter from four), `flash` says the level is new.
- */
-export function backdropSvg(tod: TimeOfDay, stock: Stock, heat = 0, flash = false): string {
-  const motion = MOTION + SIDES + WIDE_SCENE.clouds.map((_, i) => drift(i, CELL)).join('')
-  // Cropped to fill, and held by its foot: the shore stays in the window whatever its shape.
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="100%" height="100%" preserveAspectRatio="xMidYMax slice">` +
-    styleOf(tod, stock, CELL, motion, true) +
-    layers(WIDE_SCENE, CELL, { tod, heat, flash, isWide: true, withField: true }) +
-    `</svg>`
-  )
-}
-
-/** The banner of the welcome card and of the stats pane: 720 × 160 with rounded corners. */
-export function stripSvg(tod: TimeOfDay, stock: Stock, id = 'vs', heat = 0): string {
-  const motion = MOTION + STRIP_SCENE.clouds.map((_, i) => drift(i, CELL / 2)).join('')
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="160" viewBox="0 0 720 160">` +
-    styleOf(tod, stock, CELL, motion) +
-    `<defs><clipPath id="${id}"><rect width="720" height="160" rx="12"/></clipPath></defs>` +
-    // Small blocks: in a banner the pointer draws a fine line through the sky.
-    `<g clip-path="url(#${id})">${layers(STRIP_SCENE, CELL, { tod, heat, flash: false, isWide: false, withField: true, block: [3, 2] })}</g>` +
-    `</svg>`
-  )
-}
 
 /** A 5 × 7 face for the one word a picture holds. */
 const FACE: Record<string, readonly string[]> = {

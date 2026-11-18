@@ -47,6 +47,15 @@ export function timeOfDay(ms: number, offsetMin: number): TimeOfDay {
   return 'night'
 }
 
+/**
+ * The picture for an hour. The mod is a sunset, so by day the sun stays on the horizon:
+ * the hours from nine to five draw the sunset too. Dawn has its own light, and at night
+ * the moon is up and the windows are lit.
+ */
+export function sceneOf(tod: TimeOfDay): TimeOfDay {
+  return tod === 'day' ? 'sunset' : tod
+}
+
 /** Sessions that start between 00:00 and 05:00 count as night runs. */
 export function isNightHour(ms: number, offsetMin: number): boolean {
   return localParts(ms, offsetMin).hours < 5

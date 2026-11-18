@@ -5,10 +5,12 @@ import type { On } from 'claude-code'
 import { meterSvg, starsSvg, toneFor } from '../hooks/lib/card'
 import { fmtCompact, fmtMoney } from '../hooks/lib/format'
 import { bustedRowId, isTooOld } from '../hooks/lib/model'
+import { register } from '../hooks/register'
 import { mergeSummaries, summarizeText } from '../hooks/lib/history'
 import { sound } from '../hooks/lib/synth'
 import { look, unpainted } from '../hooks/lib/look'
-import { backdropSvg, bustedSvg, iconSvg, PAGE, scenePixels, stripSvg } from '../hooks/lib/tiles'
+import { backdropSvg, stripSvg } from '../hooks/lib/dusk'
+import { bustedSvg, iconSvg, PAGE, scenePixels } from '../hooks/lib/tiles'
 import { GAME_LABEL } from '../hooks/lib/time'
 import { countBusts, emptyMemory, fmtLeft, fmtResetAt, mergeMemory, rejectedBy, starsFor } from '../hooks/lib/wanted'
 
@@ -79,7 +81,7 @@ function stubEngine(on: On, stubs: Stubs = {}) {
   let rosterReads = 0
   // What the mod asked of the machine: processes run and folders listed.
   const runs: string[] = []
-  const world = { surfaces: stubs.surfaces ?? ['desktop'], isLookDrawn: stubs.isLookDrawn ?? true, sessionId: 'live-session' }
+  const world: { surfaces: string[]; isLookDrawn: boolean; sessionId: string; turns?: number } = { surfaces: stubs.surfaces ?? ['desktop'], isLookDrawn: stubs.isLookDrawn ?? true, sessionId: 'live-session' }
   on('session.version', () => ({ value: { version: stubs.engine ?? '2.1.321', base: stubs.engine ?? '2.1.321' } as never }))
   on('ui.place', (_, e) => {
     placed.push(e.id)
@@ -110,7 +112,7 @@ function stubEngine(on: On, stubs: Stubs = {}) {
   on('session.id', () => ({ value: world.sessionId }))
   on('session.end', () => ({ sessionId: world.sessionId }) as never)
   on('session.root', () => ({ value: '/home/user/vice-code' }))
-  on('session.turns', () => ({ value: stubs.turnsSoFar ?? 0 }))
+  on('session.turns', () => ({ value: world.turns ?? stubs.turnsSoFar ?? 0 }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.usage', () => ({
     value: {
@@ -176,9 +178,6 @@ function stubEngine(on: On, stubs: Stubs = {}) {
     if (e.tool === 'Write') return { result: { type: 'create', filePath: '/x/new.ts', content: 'a\nb\nc', structuredPatch: [], originalFile: null } }
     return { result: {} }
   })
-  on('session.compact', (_, e) => (e.trigger === 'precompute' ? { skip: 'test' } : { messages: e.messages, tokensBefore: 180_000, tokensAfter: 42_000 }))
-  on('classic.StopFailure', () => ({}))
-  on('classic.SessionStart', () => ({}))
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
     if (e.component === 'Spinner') return <Text>{`spin:${e.props.word}`}</Text>
@@ -209,6 +208,25 @@ async function measure($: Engine, u: Usage) {
     cost: { usd: u.cost },
     changed: ['context', 'rateLimits', 'cost'],
   })
+}
+
+/**
+ * A main-loop turn that dies on an API error, as the engine sends it: no answer, and by
+ * default after the seconds its retries take. `usage` is what earlier steps that worked left.
+ */
+async function failTurn($: Engine, turnId: string, durationMs = 8000, usage?: Record<string, unknown>) {
+  await $.turn.start({ text: 'go', turnId })
+  await $.turn.complete({ answer: '', durationMs, isAborted: false, turnId, reason: 'error', ...(usage ? { usage } : {}) } as never)
+}
+
+type Stubbed = ReturnType<typeof stubEngine>
+
+/** /clear: the conversation ends, and a moment later the process goes on under another id. */
+async function clearTo($: Engine, eng: Stubbed, nextId: string) {
+  await $.session.end({ reason: 'clear', sessionId: eng.world.sessionId } as never)
+  eng.world.sessionId = nextId
+  await eng.advance(200)
+  await eng.settle()
 }
 
 test('a new session places a welcome card in the conversation and a quiet HUD above the prompt', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
@@ -464,31 +482,36 @@ test('a used-up window is busted until it resets, then you are released', { opti
   await pane.unmount()
 })
 
-test('a rate-limit stop is a bust even below 100%', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
+test('a turn that dies short of a full window is a stalled ride, a full window makes it a bust', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
   const eng = stubEngine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
-  // At 91% the 5-hour window cannot be the reason: a window the mod cannot see is.
-  eng.usage.limits = [{ kind: 'five_hour', percentUsed: 91, resetsAt: inHours(2) }]
-  await $.classic.StopFailure({ error: 'rate_limit' })
+  // At 92% nothing says the window was the reason: an overload ends a turn the same way.
+  eng.usage.limits = [{ kind: 'five_hour', percentUsed: 92, resetsAt: inHours(2) }]
+  await failTurn($, 't1')
+  expect(eng.toasts.filter(t => t.startsWith('Your ride stalled')), 'a stalled ride').toHaveLength(1)
+  expect(eng.placed.some(id => id.startsWith('busted-')), 'no bust on a guess').toBe(false)
+  const calm = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await calm.find({ type: 'Text', text: 'Busted' })).toBeUndefined()
+  await calm.unmount()
+  // A turn that died at once never reached the API's retries: neither a bust nor a stall.
+  await failTurn($, 't2', 400)
+  expect(eng.toasts.filter(t => t.startsWith('Your ride stalled')), 'an instant error says nothing').toHaveLength(1)
+  // The same error after steps that worked is still an error.
+  await failTurn($, 't3', 9000, { model: 'claude-opus-5-5', input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 })
+  expect(eng.toasts.filter(t => t.startsWith('Your ride stalled')), 'usage from earlier steps hides nothing').toHaveLength(2)
+  // The window is full: the error is the limit, with a time to get out.
+  eng.usage.limits = [{ kind: 'five_hour', percentUsed: 100, resetsAt: inHours(2) }]
+  await failTurn($, 't4')
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ type: 'Text', text: 'Busted' })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /numbers do not show/ })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /Claude will tell you/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /Out at 20:30/ })).toBeDefined()
   expect(await band.find({ key: 'stats' }), 'buttons stay on the busted line').toBeDefined()
   await band.unmount()
   const card = await $.ui.mount({ ...row(eng.placed.find(id => id.startsWith('busted-')) ?? ''), surface: 'terminal' })
   expect(await card.find({ type: 'Text', text: /BUSTED/ }), 'the loud word, once, in the conversation').toBeDefined()
   await card.unmount()
-  // At 98% it is the 5-hour window, with a time to get out.
-  eng.usage.limits = [{ kind: 'five_hour', percentUsed: 98, resetsAt: inHours(2) }]
-  await eng.advance(60_000)
-  await $.turn.start({ text: 'go', turnId: 't2' })
-  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't2', reason: 'answer' })
-  await $.classic.StopFailure({ error: 'rate_limit' })
-  const again = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await again.find({ type: 'Text', text: /Out at 20:30/ })).toBeDefined()
-  await again.unmount()
+  expect(eng.toasts.filter(t => t.startsWith('Your ride stalled')), 'a bust is no stall').toHaveLength(2)
 })
 
 test('a window that resets after three stars is an escape', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
@@ -514,15 +537,45 @@ test('a compaction is a medkit and low health warns once', { options: { mode: 'f
   await measure($, eng.usage)
   await measure($, eng.usage)
   expect(eng.toasts.filter(t => t.startsWith('Health running low'))).toHaveLength(1)
-  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
-  expect(eng.toasts.some(t => t === 'Medkit: 180K → 42K tokens.')).toBe(true)
-  // Another mod's compaction is a medkit too; only the engine's auto-compact is the paramedics.
-  await $.session.compact({ trigger: 'plugin', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
-  expect(eng.toasts.filter(t => t === 'Medkit: 180K → 42K tokens.')).toHaveLength(2)
+  // The mod's tier hears no compaction: the context dropping by more than 40% between two readings is one.
+  const MEDKIT = 'Medkit: 150K → 42K tokens.'
+  eng.usage.tokens = 42_000
+  await measure($, eng.usage)
+  expect(eng.toasts.filter(t => t === MEDKIT)).toHaveLength(1)
+  // A small drop is the context moving, not a medkit.
+  eng.usage.tokens = 30_000
+  await measure($, eng.usage)
+  expect(eng.toasts.filter(t => t.startsWith('Medkit:'))).toHaveLength(1)
+  // Health was warned again after the medkit, once.
+  eng.usage.tokens = 150_000
+  await measure($, eng.usage)
+  expect(eng.toasts.filter(t => t.startsWith('Health running low'))).toHaveLength(2)
+  eng.usage.tokens = 42_000
+  await measure($, eng.usage)
+  expect(eng.toasts.filter(t => t === MEDKIT)).toHaveLength(2)
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await pane.press({ key: 'tab-rap' })
-  expect(await pane.find({ text: /Medkits used/ })).toBeDefined()
+  expect(await pane.find({ text: /Medkits used\s*2/ })).toBeDefined()
   await pane.unmount()
+})
+
+test('no medkit on the first reading of a conversation, after /clear included', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  eng.usage.tokens = 150_000
+  await measure($, eng.usage)
+  // The next conversation starts small: that is no drop.
+  await clearTo($, eng, 'next-session')
+  eng.usage.tokens = 20_000
+  await measure($, eng.usage)
+  expect(eng.toasts.some(t => t.startsWith('Medkit:'))).toBe(false)
+  // Even a reading that comes before the mod saw the new id compares with nothing of the old one.
+  eng.usage.tokens = 150_000
+  await measure($, eng.usage)
+  await $.session.end({ reason: 'clear', sessionId: eng.world.sessionId } as never)
+  eng.usage.tokens = 20_000
+  await measure($, eng.usage)
+  expect(eng.toasts.some(t => t.startsWith('Medkit:'))).toBe(false)
 })
 
 test('other mods keep their part of the band', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
@@ -602,16 +655,26 @@ test('the radio and effects are synthesized WAVs', async () => {
   for (const name of ['medkit', 'siren'] as const) expect(sound(name).startsWith('UklGR')).toBe(true)
 })
 
-test('a bust from a hidden limit holds until an answer comes back', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
+test('a turn rejected on credit is a bust that holds until an answer comes back', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
   const eng = stubEngine(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
-  eng.usage.limits = [{ kind: 'five_hour', percentUsed: 60, resetsAt: inHours(2) }]
-  await $.classic.StopFailure({ error: 'rate_limit' })
+  // Past 100% and still answering: extra usage, no bust.
+  eng.usage.limits = [{ kind: 'five_hour', percentUsed: 100, resetsAt: inHours(2) }]
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await measure($, eng.usage)
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' })
+  await eng.advance(60_000)
+  await $.turn.start({ text: 'more', turnId: 't2' })
+  await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't2', reason: 'answer' })
+  expect(eng.toasts.some(t => t.includes('on credit'))).toBe(true)
+  // Then a turn is rejected: the credit ran out. No reading says so, so the bust is held.
+  await failTurn($, 't3')
   await measure($, eng.usage)
   const held = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await held.find({ type: 'Text', text: 'Busted' }), 'still busted after a measure below 100%').toBeDefined()
+  expect(await held.find({ type: 'Text', text: 'Busted' }), 'still busted after a reading that shows nothing new').toBeDefined()
   await held.unmount()
+  expect(eng.toasts.some(t => t.startsWith('Your ride stalled')), 'a bust is no stall').toBe(false)
   // The next turn gets an answer: the limit no longer blocks.
   await eng.advance(60_000)
   await $.turn.start({ text: 'again', turnId: 't9' })
@@ -645,7 +708,8 @@ test('a 429 and the measure it causes count as one bust', { options: { mode: 'fu
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
   eng.usage.limits = [{ kind: 'five_hour', percentUsed: 100, resetsAt: inHours(1) }]
-  await Promise.all([$.classic.StopFailure({ error: 'rate_limit' }), measure($, eng.usage)])
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await Promise.all([$.turn.complete({ answer: '', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'error' }), measure($, eng.usage)])
   expect(eng.plays.filter(p => p === 1), 'one siren').toHaveLength(1)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await pane.press({ key: 'tab-rap' })
@@ -659,7 +723,7 @@ test('/clear keeps the wanted memory: no second announcement for the same level'
   eng.usage.limits = [{ kind: 'five_hour', percentUsed: 80, resetsAt: inHours(1.5) }]
   await measure($, eng.usage)
   expect(eng.toasts.filter(t => t.startsWith('★★★'))).toHaveLength(1)
-  await $.classic.SessionStart({ source: 'clear' })
+  await clearTo($, eng, 'next-session')
   await measure($, eng.usage)
   expect(eng.toasts.filter(t => t.startsWith('★★★'))).toHaveLength(1)
 })
@@ -758,23 +822,33 @@ test('pictures hold no words, and meters take the tone of what is left', async (
   expect(bustedRowId({ since: 42 })).toBe('busted-42')
 })
 
-test('every scene is one grid of tiles on a stock that follows the window', async () => {
+test('every scene fits its limit, follows the window and rests when asked', async () => {
   const auto = backdropSvg('sunset', 'auto', 0, false)
   expect(auto, 'light paper in a light window').toContain('prefers-color-scheme:light')
   expect(backdropSvg('sunset', 'dark', 0, false)).not.toContain('prefers-color-scheme')
   expect(auto, 'rests when motion is reduced').toContain('prefers-reduced-motion')
-  expect(auto, 'no glows').not.toContain('feGaussianBlur')
+  expect(auto, 'no blurs').not.toContain('feGaussianBlur')
+  expect(auto, 'the backdrop never takes the pointer, so it carries no hover rules').not.toContain(':hover')
+  expect(auto, 'held by its foot when the window crops it').toContain('preserveAspectRatio="xMidYMax slice"')
+  // Every animation moves in steps: the picture is painted a few times a second at most.
+  const timings = auto.match(/animation:[^;}]+/g) ?? []
+  expect(timings.length).toBeGreaterThan(0)
+  expect(timings.filter(t => !t.includes('steps(') && !t.includes('none')), 'nothing eases').toEqual([])
   // The wanted level lives in the picture: patrol lights from three stars, a helicopter from four.
-  expect(backdropSvg('sunset', 'auto', 2, false)).not.toContain('class="kr"')
-  expect(backdropSvg('sunset', 'auto', 3, false)).toContain('class="kr"')
-  expect(backdropSvg('sunset', 'auto', 3, false)).not.toContain('class="heli"')
-  expect(backdropSvg('sunset', 'auto', 4, false)).toContain('class="heli"')
-  expect(backdropSvg('sunset', 'auto', 3, true), 'new heat blinks').toContain('class="cr"')
-  expect(backdropSvg('sunset', 'auto', 3, false)).not.toContain('class="cr"')
+  const has = (svg: string, name: string) => new RegExp(`class="[^"]*\\b${name}\\b`).test(svg)
+  expect(has(backdropSvg('sunset', 'auto', 2, false), 'kr')).toBe(false)
+  expect(has(backdropSvg('sunset', 'auto', 3, false), 'kr')).toBe(true)
+  expect(has(backdropSvg('sunset', 'auto', 3, false), 'heli')).toBe(false)
+  expect(has(backdropSvg('sunset', 'auto', 4, false), 'heli')).toBe(true)
+  expect(has(backdropSvg('sunset', 'auto', 3, true), 'cr'), 'new heat blinks').toBe(true)
+  expect(has(backdropSvg('sunset', 'auto', 3, false), 'cr')).toBe(false)
   for (const tod of ['dawn', 'day', 'sunset', 'night'] as const) {
-    expect(backdropSvg(tod, 'auto', 5, true).length, `${tod} backdrop fits`).toBeLessThan(131_072)
-    expect(stripSvg(tod, 'auto').length).toBeLessThan(131_072)
+    for (const stock of ['auto', 'light', 'dark'] as const) {
+      expect(backdropSvg(tod, stock, 5, true).length, `${tod} ${stock} backdrop fits`).toBeLessThan(131_072)
+      expect(stripSvg(tod, stock).length, `${tod} ${stock} banner fits`).toBeLessThan(131_072)
+    }
   }
+  expect(backdropSvg('sunset', 'auto', 5, true), 'the same picture every time').toBe(backdropSvg('sunset', 'auto', 5, true))
   const px = scenePixels('sunset', 36, 16)
   expect(px).toHaveLength(16)
   expect(px[0]).toHaveLength(36)
@@ -787,12 +861,12 @@ test('the backdrop shows the wanted level', { options: { mode: 'full', language:
   const calm = await $.ui.mount(target)
   const quiet = await calm.find({ type: 'Svg' })
   expect(quiet?.props.isInteractive, 'so its own CSS animates it').toBe(true)
-  expect(String(quiet?.props.source)).not.toContain('class="heli"')
+  expect(String(quiet?.props.source)).not.toMatch(/class="[^"]*\bheli\b/)
   await calm.unmount()
   eng.usage.limits = [{ kind: 'five_hour', percentUsed: 92, resetsAt: inHours(1) }]
   await measure($, eng.usage)
   const hot = await $.ui.mount(target)
-  expect(String((await hot.find({ type: 'Svg' }))?.props.source), 'a helicopter at four stars').toContain('class="heli"')
+  expect(String((await hot.find({ type: 'Svg' }))?.props.source), 'a helicopter at four stars').toMatch(/class="[^"]*\bheli\b/)
   await hot.unmount()
 })
 
@@ -870,7 +944,7 @@ test('in a terminal Lite is a banner at the top of each new conversation', { opt
   expect(await card.find({ type: 'Text', text: /\/vice full/ }), 'how to turn the game on').toBeDefined()
   await card.unmount()
   // /clear opens another conversation, with its own banner.
-  await $.classic.SessionStart({ source: 'clear' } as never)
+  await clearTo($, eng, 'next-session')
   expect(eng.placed).toHaveLength(2)
 })
 
@@ -1099,10 +1173,13 @@ test('the icon is a still picture with every color written into it', async () =>
   expect(icon).not.toContain('class=')
 })
 
-test('a banner cuts its sky finer than the backdrop does', async () => {
-  const blocks = (svg: string) => svg.split('<g class="b ').length - 1
-  expect(blocks(stripSvg('sunset', 'auto'))).toBeGreaterThan(30)
-  expect(blocks(backdropSvg('sunset', 'auto'))).toBeGreaterThan(200)
+test('the banner feels the pointer and the backdrop does not', async () => {
+  const groups = (svg: string) => (svg.match(/class="b[" ]/g) ?? []).length
+  const banner = stripSvg('sunset', 'auto')
+  expect(banner).toContain('.b:hover')
+  expect(groups(banner), 'a few dozen groups, not hundreds').toBeGreaterThan(8)
+  expect(groups(banner)).toBeLessThanOrEqual(48)
+  expect(backdropSvg('sunset', 'auto')).not.toContain(':hover')
 })
 
 test('a window that joined without saying it draws themes still counts as an app window', { options: { language: 'en' } }, async ($, on) => {
@@ -1112,7 +1189,7 @@ test('a window that joined without saying it draws themes still counts as an app
   expect(eng.themes).toEqual(['sunset'])
   expect(eng.placed.filter(id => id.startsWith('hello-')), 'the once-after-install card').toHaveLength(1)
   // The next conversation does not get the card again, as in a window that draws the scene.
-  await $.classic.SessionStart({ source: 'clear' } as never)
+  await clearTo($, eng, 'next-session')
   expect(eng.placed.filter(id => id.startsWith('hello-'))).toHaveLength(1)
   // And the first turn does not send the look again.
   await $.turn.start({ text: 'go', turnId: 't1' })
@@ -1136,7 +1213,7 @@ test('a terminal with a phone attached keeps its card at the top of each convers
   const eng = stubEngine(on, { store: { welcomed: 1 }, surfaces: ['terminal', 'mobile'], isLookDrawn: false })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   expect(eng.placed.filter(id => id.startsWith('hello-'))).toHaveLength(1)
-  await $.classic.SessionStart({ source: 'clear' } as never)
+  await clearTo($, eng, 'next-session')
   expect(eng.placed.filter(id => id.startsWith('hello-')), 'the banner is the look in a terminal').toHaveLength(2)
 })
 
@@ -1156,7 +1233,7 @@ test('the card speaks of the colors only where the engine took them', { options:
   const eng = stubEngine(on, { refusesColors: true })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const card = await $.ui.mount({ ...row(eng.placed[0] ?? ''), surface: 'desktop' })
-  expect(await card.find({ type: 'Text', text: /skyline set in symbols/ })).toBeDefined()
+  expect(await card.find({ type: 'Text', text: /skyline at dusk/ })).toBeDefined()
   expect(await card.find({ type: 'Text', text: /its colors/ }), 'no colors were taken').toBeUndefined()
   await card.unmount()
 })
@@ -1167,11 +1244,19 @@ test('an app window has a switch above the prompt: Off, Look, Game', { options: 
   const eng = stubEngine(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  // The position in force carries the dot; all three have the same chrome, and the other two are dim.
   const main = async () => {
-    const on3 = await Promise.all(['mode-off', 'mode-lite', 'mode-full'].map(key => band.find({ key })))
-    return on3.map(b => (b?.props.variant === 'primary' ? b.text : '')).join('')
+    const three = await Promise.all(['mode-off', 'mode-lite', 'mode-full'].map(key => band.find({ key })))
+    for (const b of three) expect(b?.props.variant, 'one chrome for all three').toBe('secondary')
+    for (const b of three) expect(b?.props.dimColor, 'a dim Button would be tucked into the app\'s menu').toBeUndefined()
+    const marked = three.filter(b => String(b?.props.label).startsWith('● '))
+    expect(marked, 'one position in force').toHaveLength(1)
+    return String(marked[0]?.props.label).slice(2)
   }
   expect(await main(), 'Lite is the position in force').toBe('Look')
+  expect((await band.find({ type: 'Text', text: 'Off' }))?.props.dimColor, 'the others are dim').toBe(true)
+  const label = await band.find({ type: 'Text', text: 'Vice Code' })
+  expect(label?.props.size, 'the label is body text, on the buttons\' line').toBeUndefined()
   expect(await band.find({ type: 'Text', text: /engine/ }), 'other mods keep their rows').toBeDefined()
 
   await band.press({ key: 'mode-full' })
@@ -1213,22 +1298,63 @@ test('the switch can be hidden, by the setting or by /vice switch', { options: {
   await band.unmount()
 })
 
-test('a new conversation is set up even when the start hook is passed by', { options: { language: 'en' } }, async ($, on) => {
-  // In the app a plugin above can send classic.SessionStart on past this module.
+test('a new conversation is set up once, from the session id changing', { options: { language: 'en' } }, async ($, on) => {
   const eng = stubEngine(on, { store: { welcomed: 1 }, surfaces: ['terminal'], isLookDrawn: false })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   expect(eng.placed).toHaveLength(1)
-  await $.session.end({ reason: 'clear' } as never)
-  eng.world.sessionId = 'next-session'
+  // The id has not changed yet: nothing to set up.
+  await $.session.end({ reason: 'clear', sessionId: 'live-session' } as never)
+  await eng.advance(600)
+  await eng.settle()
+  expect(eng.placed, 'still the old conversation').toHaveLength(1)
+  // The id changes: the watch sees it on its next tick.
+  eng.world.sessionId = 'second'
+  await eng.advance(200)
+  await eng.settle()
+  expect(eng.placed, 'the next conversation got its card').toHaveLength(2)
+  // Neither the watch, running on, nor the first prompt sets it up again.
+  await eng.advance(6000)
+  await eng.settle()
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  expect(eng.placed, 'one card for the conversation').toHaveLength(2)
+})
+
+test('the first prompt sets a conversation up when the watch missed it, and only once', { options: { language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on, { store: { welcomed: 1 }, surfaces: ['terminal'], isLookDrawn: false })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  // The person types before the watch's first tick: the prompt sets it up, the watch then finds nothing to do.
+  await $.session.end({ reason: 'resume', sessionId: 'live-session' } as never)
+  eng.world.sessionId = 'second'
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  expect(eng.placed).toHaveLength(2)
   await eng.advance(1000)
   await eng.settle()
-  expect(eng.placed, 'the next conversation got its card without the hook').toHaveLength(2)
-  // Where the hook is heard, it does the work and the check finds nothing left to do.
-  await $.session.end({ reason: 'clear' } as never)
-  await $.classic.SessionStart({ source: 'clear' } as never)
+  expect(eng.placed, 'one card for the conversation').toHaveLength(2)
+  // The id changes only after the watch gave up: the first prompt is the backstop.
+  await $.session.end({ reason: 'clear', sessionId: 'second' } as never)
+  await eng.advance(6000)
+  await eng.settle()
+  expect(eng.placed).toHaveLength(2)
+  eng.world.sessionId = 'third'
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
   await eng.advance(1000)
   await eng.settle()
   expect(eng.placed).toHaveLength(3)
+})
+
+test('no hook stands on an event an app\'s own plugin can pass by', () => {
+  // The engine prints a "hook was skipped" row for each one: none of classic.* or session.compact.
+  const events: string[] = []
+  const record = (name: string) => {
+    events.push(name)
+    const chain = { catch: () => chain }
+    return chain
+  }
+  register(record as never, {})
+  expect(events).toContain('session.end')
+  expect(events.filter(n => n.startsWith('classic.')), 'no classic hook').toEqual([])
+  const passedBy = ['session.compact', 'prompt.section', 'prompt.context', 'prompt.attachment', 'prompt.compose', 'skill.prompt', 'attribution.text', 'settings.read']
+  expect(events.filter(n => passedBy.includes(n)), 'none of the events the app sends on past a mod').toEqual([])
 })
 
 test('Game and then Off pressed in one breath end with the mod off', { options: { language: 'en' } }, async ($, on) => {
@@ -1239,7 +1365,7 @@ test('Game and then Off pressed in one breath end with the mod off', { options: 
   await Promise.all([band.press({ key: 'mode-full' }), band.press({ key: 'mode-off' })])
   await eng.settle()
   expect(eng.themes.at(-1), 'the look is cleared last').toBe('clear')
-  expect((await band.find({ key: 'mode-off' }))?.props.variant).toBe('primary')
+  expect((await band.find({ key: 'mode-off' }))?.props.label).toBe('● Off')
   expect(await band.find({ type: 'Text', text: 'Health' })).toBeUndefined()
   await band.unmount()
 })
@@ -1248,28 +1374,87 @@ test('a mod that starts off still speaks the language and takes the commands tha
   const eng = stubEngine(on, { store: { off: true } })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ key: 'mode-off' }))?.text, 'the switch is in Russian although nothing was set up').toBe('Выкл')
+  expect((await band.find({ key: 'mode-off' }))?.props.label, 'the switch is in Russian although nothing was set up').toBe('● Выкл')
   // The switch can be hidden and shown while off, and /vice full turns the mod on straight into the game.
   expect((await $.command.run({ command: 'vice', args: 'switch', ...COMMAND })).text).toContain('скрыт')
   expect((await $.command.run({ command: 'vice', args: 'switch', ...COMMAND })).text).toContain('показан')
   expect((await $.command.run({ command: 'vice', args: 'stats', ...COMMAND })).text, 'the rest still waits').toContain('/vice on')
   expect((await $.command.run({ command: 'vice', args: 'full', ...COMMAND })).text).toContain('Игра включена')
   expect(eng.themes).toEqual(['sunset'])
-  expect((await band.find({ key: 'mode-full' }))?.props.variant).toBe('primary')
+  expect((await band.find({ key: 'mode-full' }))?.props.label).toBe('● Игра')
   await band.unmount()
 })
 
-test('a slow start hook does not make the mod set a conversation up twice', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
+test('after /clear the conversation is new whatever the turn count says; a resumed one is not', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
   const eng = stubEngine(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   expect(eng.placed.filter(id => id.startsWith('welcome-'))).toHaveLength(1)
-  await $.session.end({ reason: 'clear' } as never)
-  eng.world.sessionId = 'second-conversation'
-  // The mod's own check comes first...
-  await eng.advance(1000)
+  // The engine counts /clear itself: the new conversation starts with a turn on the clock.
+  eng.world.turns = 1
+  await clearTo($, eng, 'second-conversation')
+  expect(eng.placed.filter(id => id.startsWith('welcome-')), 'a card for the cleared conversation').toHaveLength(2)
+  // /resume brings a conversation with its history: no card on top of it.
+  eng.world.turns = 6
+  await $.session.end({ reason: 'resume', sessionId: eng.world.sessionId } as never)
+  eng.world.sessionId = 'an-older-conversation'
+  await eng.advance(200)
   await eng.settle()
+  expect(eng.placed.filter(id => id.startsWith('welcome-')), 'no card over a resumed history').toHaveLength(2)
+})
+
+test('the banner opens a cleared conversation in a terminal whatever the turn count says', { options: { language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on, { store: { welcomed: 1 }, surfaces: ['terminal'], isLookDrawn: false })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(eng.placed.filter(id => id.startsWith('hello-'))).toHaveLength(1)
+  eng.world.turns = 1
+  await clearTo($, eng, 'next-session')
+  expect(eng.placed.filter(id => id.startsWith('hello-'))).toHaveLength(2)
+})
+
+test('a watch that a later one replaced sets nothing up', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  // Two ends in a row, as /clear right after /clear: one watch is left, and one set-up.
+  await $.session.end({ reason: 'clear', sessionId: eng.world.sessionId } as never)
+  await $.session.end({ reason: 'clear', sessionId: eng.world.sessionId } as never)
+  eng.world.sessionId = 'next-session'
+  await eng.advance(200)
+  await eng.advance(200)
+  await eng.settle()
+  expect(eng.placed.filter(id => id.startsWith('welcome-')), 'one card for the new conversation').toHaveLength(2)
+})
+
+test('the game sets a new conversation up once: one card, whatever fires', { options: { mode: 'full', language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(eng.placed.filter(id => id.startsWith('welcome-'))).toHaveLength(1)
+  await clearTo($, eng, 'second-conversation')
   expect(eng.placed.filter(id => id.startsWith('welcome-'))).toHaveLength(2)
-  // ...and the start hook, held up by the hooks beneath it, arrives after: nothing more to do.
-  await $.classic.SessionStart({ source: 'clear' } as never)
+  // The first prompt of the conversation comes after the watch: nothing more to do.
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  await eng.advance(6000)
+  await eng.settle()
   expect(eng.placed.filter(id => id.startsWith('welcome-')), 'one card for the conversation').toHaveLength(2)
+})
+
+test('a turn that dies at a full window is one bust; an outage is a stalled ride', { options: { mode: 'full', language: 'en', sounds: true } }, async ($, on) => {
+  const eng = stubEngine(on, { audioResolvesAtOnce: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  // An outage: the windows are far from full.
+  await failTurn($, 't1')
+  expect(eng.toasts.filter(t => t.startsWith('Your ride stalled'))).toHaveLength(1)
+  expect(eng.placed.some(id => id.startsWith('busted-'))).toBe(false)
+  // The window is full: the error is the limit.
+  eng.usage.limits = [{ kind: 'five_hour', percentUsed: 100, resetsAt: inHours(1) }]
+  await failTurn($, 't2')
+  await failTurn($, 't3')
+  expect(eng.placed.filter(id => id.startsWith('busted-')), 'one busted card').toHaveLength(1)
+  expect(eng.plays.filter(p => p === 1), 'one siren').toHaveLength(1)
+  expect(eng.toasts.filter(t => t.startsWith('Your ride stalled')), 'a bust is no stall').toHaveLength(1)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'tab-rap' })
+  expect(await pane.find({ text: /Busted\s+1\b/ })).toBeDefined()
+  expect(await pane.find({ text: /Rides stalled\s+1\b/ })).toBeDefined()
+  await pane.unmount()
 })

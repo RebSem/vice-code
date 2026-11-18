@@ -130,8 +130,7 @@ export type Labels = {
     armor: (level: 75 | 90, left: string, when: string | null, kind: 'week' | 'spend') => string
     swapRide: string
     healthLow: (pct: string) => string
-    medkitManual: (before: string, after: string) => string
-    medkitAuto: (before: string, after: string) => string
+    medkit: (before: string, after: string) => string
     stall: string
   }
 }
@@ -202,8 +201,8 @@ export const LABELS: Record<Lang, Labels> = {
     switch: { off: 'Выкл', lite: 'Оформление', full: 'Игра' },
     lite: {
       title: 'Добро пожаловать в Майами.',
-      body: 'Claude Code теперь в цветах заката, а за разговором стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке выше. Переключатель над полем ввода выключает всё это или включает игру.',
-      bodyScene: 'За разговором теперь стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке выше.',
+      body: 'Claude Code теперь в цветах заката, а за разговором стоит город на закате. Ночью над ним встаёт луна и зажигаются окна. Проведи курсором по небу на картинке выше. Переключатель над полем ввода выключает всё это или включает игру.',
+      bodyScene: 'За разговором теперь стоит город на закате. Ночью над ним встаёт луна и зажигаются окна. Проведи курсором по небу на картинке выше.',
       bodyPlain: 'Цвета и город за разговором рисуют десктопное и мобильное приложения. Здесь можно включить игру: /vice full',
       hint: '/vice full — игра: розыск, шкалы, статистика · /vice paper dark — под тёмное окно · /vice off — выключить',
       hintShort: '/vice full — игра · /vice off — выключить',
@@ -282,9 +281,8 @@ export const LABELS: Record<Lang, Labels> = {
       },
       swapRide: 'Суперкар жрёт лимит. Пересядь на маслкар: /model sonnet',
       healthLow: pct => `Здоровье на исходе: ${pct}. Аптечка: /compact`,
-      medkitManual: (before, after) => `Аптечка: ${before} → ${after} токенов.`,
-      medkitAuto: (before, after) => `Тебя откачали парамедики: ${before} → ${after} токенов.`,
-      stall: 'Тачка заглохла: сервер перегружен или сбоит. Попробуй чуть позже.',
+      medkit: (before, after) => `Аптечка: ${before} → ${after} токенов.`,
+      stall: 'Тачка заглохла: сервер отказал или сбоит. Попробуй чуть позже.',
     },
   },
   en: {
@@ -352,8 +350,8 @@ export const LABELS: Record<Lang, Labels> = {
     switch: { off: 'Off', lite: 'Look', full: 'Game' },
     lite: {
       title: 'Welcome to Miami.',
-      body: 'Claude Code now wears the sunset: its colors, and a skyline set in symbols behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture above. The switch above the prompt turns all of it off, or turns the game on.',
-      bodyScene: 'A skyline set in symbols now stands behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture above.',
+      body: 'Claude Code now wears the sunset: its colors, and a skyline at dusk behind the conversation. At night the moon comes up and the windows light. Run the pointer across the sky in the picture above. The switch above the prompt turns all of it off, or turns the game on.',
+      bodyScene: 'A skyline at dusk now stands behind the conversation. At night the moon comes up and the windows light. Run the pointer across the sky in the picture above.',
       bodyPlain: 'The colors and the skyline are drawn by the desktop and mobile apps. Here you can turn on the game: /vice full',
       hint: '/vice full — the game: wanted level, HUD, stats · /vice paper dark — match a dark window · /vice off',
       hintShort: '/vice full — the game · /vice off — turn it off',
@@ -432,9 +430,8 @@ export const LABELS: Record<Lang, Labels> = {
       },
       swapRide: 'The supercar burns through the limit. Switch to the muscle car: /model sonnet',
       healthLow: pct => `Health running low: ${pct}. Medkit: /compact`,
-      medkitManual: (before, after) => `Medkit: ${before} → ${after} tokens.`,
-      medkitAuto: (before, after) => `The paramedics pulled you through: ${before} → ${after} tokens.`,
-      stall: 'Your ride stalled: the API is overloaded or erroring. Try again shortly.',
+      medkit: (before, after) => `Medkit: ${before} → ${after} tokens.`,
+      stall: 'Your ride stalled: the API turned the request down or is erroring. Try again shortly.',
     },
   },
 }

@@ -1,5 +1,5 @@
 // Vice Code: a Miami look for Claude Code, in two modes.
-// Lite (the default) is ambient: the app's colors and a skyline of symbols behind the
+// Lite (the default) is ambient: the app's colors and a skyline at dusk behind the
 // conversation. Full adds the game: usage limits as a wanted level, a HUD above the
 // prompt, Miami spinner phrases, gear names on tool rows, a radio and a stats pane.
 // Everything here is drawing and counting; no tool call is changed.
@@ -23,8 +23,9 @@ import { sceneCells } from './lib/raster'
 import { emptyLive, liveDay, modelFamily, patchLines, toolBucket, totalsFromSummaries } from './lib/stats'
 import { sound } from './lib/synth'
 import type { Stock } from './lib/tiles'
-import { backdropSvg, bustedSvg, stripSvg } from './lib/tiles'
-import { isNightHour, localOffsetMinutes, timeOfDay } from './lib/time'
+import { backdropSvg, stripSvg } from './lib/dusk'
+import { bustedSvg } from './lib/tiles'
+import { isNightHour, localOffsetMinutes, sceneOf, timeOfDay } from './lib/time'
 import type { LimitReading, Limits, WantedEvent } from './lib/wanted'
 import { diffLimits, emptyMemory, fmtResetAt, fullKeys, healthPct, mergeMemory, readLimits, rejectedBy, starsFor, windowKey } from './lib/wanted'
 
@@ -259,13 +260,25 @@ let hasColors = false
 /** The Off / Look / Game switch stands above the prompt in an app window. */
 let isSwitchShown = true
 /**
- * True from the end of a conversation (/clear, /resume) until the next one is set up.
- * `classic.SessionStart` does that where it is heard; an app's own plugins can pass a
- * mod's hook by on that event, so the mod also looks for itself a moment later.
+ * True from the end of a conversation (/clear, /resume, /branch) until the next one is set
+ * up. No event of the mod's own tier marks that start: the mod watches the session id
+ * change (see watchNewConversation), and the next prompt sets it up if that missed it.
  */
 let needsSetup = false
-/** True once the mod's own check has set the pending conversation up: the start hook, if it comes later, has nothing left to do. */
-let didSelfSetup = false
+/** The watch for the next conversation's id, while one runs. */
+let idWatch: { cancel: () => void } | null = null
+const ID_WATCH_MS = 200
+const ID_WATCH_TICKS = 25
+/** The last context reading of this conversation: a sharp drop between two is a compaction. */
+let lastContext: { sessionId: string; tokens: number } | null = null
+/** A turn that died sooner than this never got as far as the API's retries. */
+const STALL_MIN_MS = 3000
+/** A context smaller than this has nothing worth calling a compaction. */
+const COMPACT_MIN_TOKENS = 20_000
+/** Why the last conversation ended ('clear', 'resume'), until the next one is set up. */
+let endedBy: string | null = null
+/** A drop to under this share of the last reading counts as a compaction (a medkit). */
+const COMPACT_SHARE = 0.6
 /** The tail of the mode changes in flight: see inTurn. */
 let modeChain: Promise<void> = Promise.resolve()
 /** How many prompts of a dormant session have looked at the roster, and how many may. */
@@ -462,10 +475,16 @@ async function bumpRecords($: EngineInterface, change: (r: Records) => Records):
 /** Sets the session up in the mode that is on; a mod the person turned off sets up nothing. */
 async function startSession($: EngineInterface, isFresh: boolean, mustGreet = false): Promise<void> {
   needsSetup = false
+  idWatch?.cancel()
+  idWatch = null
+  // A new conversation's first context reading is a start, not a drop.
+  if (isFresh) lastContext = null
   if (isOff) return
   hasRetriedLook = false
   if (isFull) await startFull($, isFresh, mustGreet)
   else await startLite($, isFresh)
+  // A conversation that was just set up never sits on the counter's first value.
+  await redraw($)
 }
 
 /**
@@ -494,8 +513,9 @@ async function greetLite($: EngineInterface, isFresh: boolean, isLate = false): 
   const sessionId = await $.session.id()
   if (!isFresh && (await read($, ui)).greeted === sessionId) return
   const greeted = () => update($, ui, (v): UiState => ({ ...v, greeted: sessionId }))
-  // A resumed conversation already has its history: no card on top of it.
-  if (!isLate && (await $.session.turns()) > 0) {
+  // A resumed conversation already has its history: no card on top of it. After /clear
+  // the conversation is new whatever the count says: the engine counts the command itself.
+  if (!isLate && endedBy !== 'clear' && (await $.session.turns()) > 0) {
     await greeted()
     return
   }
@@ -531,8 +551,10 @@ async function startFull($: EngineInterface, isFresh: boolean, mustGreet = false
   const root = await $.session.root()
   const current = await read($, live)
   if (isFresh || !current || current.sessionId !== sessionId) {
-    // --resume and --continue bring prompts with them: go straight to the HUD.
-    const isResumed = (await $.session.turns()) > 0
+    // --resume and --continue bring prompts with them: go straight to the HUD. After
+    // /clear the conversation is new whatever the count says: the engine counts the
+    // command itself.
+    const isResumed = endedBy === 'clear' ? false : (await $.session.turns()) > 0
     await update($, live, () => emptyLive(sessionId, projectName(root), now, isNightHour(now, offset)))
     // A new conversation opens with the welcome card; a resumed one already has its history.
     isNew = !isResumed
@@ -595,12 +617,24 @@ async function placeBusted($: EngineInterface): Promise<void> {
   }
 }
 
+/**
+ * Asks for the band and the cards to be drawn again. What they show hangs on the module's
+ * own state (the mode, off), which a drawing cannot be seen to read; the counter is what
+ * it reads instead. The counter takes the time, not a step: /clear puts session state back
+ * to its first values, and a counter that came back to a number it had held under another
+ * mode would hand the surface a drawing it already has.
+ */
+async function redraw($: EngineInterface): Promise<void> {
+  const now = await $.clock.now()
+  await update($, tick, n => Math.max(n + 1, now))
+}
+
 /** Starts the lights and asks for one more drawing when they are due to stop. */
 async function flashLights($: EngineInterface): Promise<void> {
   const until = (await $.clock.now()) + FLASH_MS
   await update($, ui, (v): UiState => ({ ...v, flashUntil: until }))
   $.clock.after(FLASH_MS + 300, () => {
-    void update($, tick, n => n + 1)
+    void redraw($)
   })
 }
 
@@ -620,9 +654,12 @@ async function applyLook($: EngineInterface): Promise<string | null> {
   const hadColors = hasColors
   // The newest engines read the scene's name as `scene`, the ones before them as `id`.
   // One shape with both serves the engines that drop a member they do not know; the
-  // shape with `scene` alone serves one that refuses it. The glass has no tint of its
-  // own: the panels take the look's colors.
-  const glass = { blur: 12, opacity: 0.55 }
+  // shape with `scene` alone serves one that refuses it.
+  // The glass is a flat wash under the conversation column with no blur: a blur smears the
+  // skyline, and with the sidebar or a pane open the app spreads it over the whole window.
+  // It has no tint: the wash is then the look's own surface color in each mode, whereas a
+  // tint that does not suit the window's mode makes the app veil everything at 88%.
+  const glass = { blur: 0, opacity: 0.58 }
   const scenes = hasScene ? [{ backdrop: { scene: BACKDROP, id: BACKDROP, glass } }, { backdrop: { scene: BACKDROP, glass } }] : [{}]
   // Both modes of the colors always go, and no mode is asked for: the window keeps its
   // own, and the paper a person picks changes the scene alone.
@@ -725,7 +762,7 @@ async function enterFull($: EngineInterface): Promise<void> {
   } catch (err) {
     $.ui.log(`vice-code: the game did not start: ${String(err).slice(0, 200)}`)
   }
-  await update($, tick, n => n + 1)
+  await redraw($)
 }
 
 /** Back to the look alone: the game's timers stop, what it counted stays in the store. */
@@ -738,7 +775,7 @@ async function enterLite($: EngineInterface): Promise<void> {
   resetTimer?.cancel()
   resetTimer = null
   await syncScene($)
-  await update($, tick, n => n + 1)
+  await redraw($)
 }
 
 /** /vice off: the look is cleared and every hook steps aside, in this session and the next ones. */
@@ -757,7 +794,7 @@ async function turnOff($: EngineInterface): Promise<void> {
   // Asked for by the person, so clearing the session's one theme is theirs to decide.
   await $.theme.clear().catch(() => undefined)
   await update($, radio, v => ({ ...v, playing: false }))
-  await update($, tick, n => n + 1)
+  await redraw($)
 }
 
 /**
@@ -791,8 +828,96 @@ async function setMode($: EngineInterface, mode: 'off' | 'lite' | 'full'): Promi
 /** Sets a new conversation up if nothing has done so since the last one ended. */
 async function setUpIfNeeded($: EngineInterface): Promise<void> {
   if (!needsSetup || inert || isOff) return
-  await startSession($, true)
-  didSelfSetup = true
+  // Cleared first, so a tick of the watch that lands while this runs finds nothing to do.
+  needsSetup = false
+  try {
+    await startSession($, true)
+  } finally {
+    // How the last conversation ended matters to this set-up alone.
+    endedBy = null
+  }
+}
+
+/**
+ * After /clear, /resume or /branch the process goes on under another session id, and no
+ * event of the mod's tier says when. Until the id changes `$.session.id()` still answers
+ * the old one, so the mod asks it again every 200 ms for five seconds and sets the new
+ * conversation up the moment it differs. The next prompt is the backstop.
+ */
+function watchNewConversation($: EngineInterface, oldId: string): void {
+  idWatch?.cancel()
+  let ticks = 0
+  let isAsking = false
+  const watch = $.clock.every(ID_WATCH_MS, () => {
+    ticks += 1
+    if (!needsSetup || ticks > ID_WATCH_TICKS) {
+      watch.cancel()
+      if (idWatch === watch) idWatch = null
+      return
+    }
+    if (isAsking) return
+    isAsking = true
+    void $.session
+      .id()
+      .then(async id => {
+        // A watch that a later one replaced has nothing more to say.
+        if (idWatch !== watch || id === oldId || !needsSetup) return
+        watch.cancel()
+        if (idWatch === watch) idWatch = null
+        await setUpIfNeeded($)
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        isAsking = false
+      })
+  })
+  idWatch = watch
+}
+
+/**
+ * The context reading of a conversation: a drop to under 60% of the last one is a
+ * compaction, counted as a medkit. The mod's tier hears no compaction event, so it cannot
+ * tell whose it was: the toast gives the two numbers and no more. A small context has
+ * nothing to compact, and a conversation's first reading compares with nothing.
+ */
+async function noteContext($: EngineInterface, tokens: number): Promise<void> {
+  const sessionId = await $.session.id()
+  const prev = lastContext
+  lastContext = { sessionId, tokens }
+  if (!prev || prev.sessionId !== sessionId || prev.tokens < COMPACT_MIN_TOKENS) return
+  if (tokens < prev.tokens * COMPACT_SHARE) await medkit($, prev.tokens, tokens)
+}
+
+/**
+ * A main-loop turn that died on an API error. The mod's tier is not told which error, so
+ * it reads the windows again: a window at 100% or more explains it as a bust. A window
+ * that is merely close proves nothing (an overload or the context limit ends a turn the
+ * same way), so anything else is a stalled ride. A turn that died at once never reached
+ * the API's retries (a login that lapsed, a request refused outright): that is neither.
+ */
+async function onTurnError($: EngineInterface, durationMs: number): Promise<void> {
+  const peak = (l: LimitsState) => Math.max(l.short?.pct ?? 0, l.week?.pct ?? 0, l.spend?.pct ?? 0)
+  await refreshUsage($, false)
+  const now = await $.clock.now()
+  if (peak(await read($, limits)) < 100) {
+    if (durationMs < STALL_MIN_MS) return
+    await update($, live, v => (v ? { ...v, stalls: (v.stalls ?? 0) + 1 } : v))
+    if (opts.toasts) $.ui.toast(LABELS[(await read($, env)).lang].wanted.stall)
+    return
+  }
+  let fresh: { kind: BustKind; until: number | null } | null = null
+  // A reading that came with the error may have busted already: a 429 and its reading are one bust.
+  const after = await update($, limits, (v): LimitsState => {
+    fresh = null
+    if (v.mem.busted) return v
+    fresh = rejectedBy(v)
+    return { ...v, mem: { ...v.mem, busted: { ...fresh, sticky: true, since: now }, bustedKey: windowKey(v.short) } }
+  })
+  const bust = fresh as { kind: BustKind; until: number | null } | null
+  if (!bust) return
+  await saveWanted($, after.mem)
+  await announce($, [{ type: 'busted', kind: bust.kind, until: bust.until }])
+  scheduleReset($, after, now)
 }
 
 async function turnOn($: EngineInterface): Promise<void> {
@@ -801,7 +926,7 @@ async function turnOn($: EngineInterface): Promise<void> {
   if (isFull) scheduleImport($)
   await startSession($, false)
   if (isFull) await sayLegend($)
-  await update($, tick, n => n + 1)
+  await redraw($)
 }
 
 /** Reads usage now; `withThreshold` also asks where auto-compact kicks in (estimated locally). */
@@ -955,18 +1080,15 @@ async function sfx($: EngineInterface, name: 'siren' | 'medkit'): Promise<void> 
 }
 
 /** A compaction is a medkit: count it, say it, and refresh health. */
-async function medkit($: EngineInterface, trigger: 'manual' | 'auto' | 'plugin', before: number | null, after: number | null): Promise<void> {
-  const saved = before !== null && after !== null ? Math.max(0, before - after) : 0
+async function medkit($: EngineInterface, before: number, after: number): Promise<void> {
+  const saved = Math.max(0, before - after)
   await update($, live, v => (v ? { ...v, medkits: (v.medkits ?? 0) + 1, medkitTokens: (v.medkitTokens ?? 0) + saved } : v))
-  await update($, hud, (v): Hud => ({ ...v, contextTokens: after ?? null, contextPct: null }))
+  await update($, hud, (v): Hud => ({ ...v, contextTokens: after, contextPct: null }))
   await update($, limits, (v): LimitsState => ({ ...v, mem: { ...v.mem, healthWarned: false } }))
   const lang = (await read($, env)).lang
-  if (opts.wanted && before !== null && after !== null) {
-    const W = LABELS[lang].wanted
-    const b = fmtCompact(before, lang)
-    const a = fmtCompact(after, lang)
-    // Your own /compact or another mod's is a medkit; only the engine's auto-compact is the paramedics.
-    $.ui.toast(trigger === 'auto' ? W.medkitAuto(b, a) : W.medkitManual(b, a), { timeoutMs: 6000 })
+  if (opts.wanted) {
+    // Whose compaction it was is not known here, so the line says only what happened.
+    $.ui.toast(LABELS[lang].wanted.medkit(fmtCompact(before, lang), fmtCompact(after, lang)), { timeoutMs: 6000 })
   }
   await sfx($, 'medkit')
 }
@@ -1062,8 +1184,8 @@ async function wake($: EngineInterface): Promise<void> {
     .catch(err => $.ui.log(`vice-code: /vice was not registered: ${String(err)}`))
   $.clock.every(30_000, () => {
     if (isOff) return
-    if (isFull) void update($, tick, n => n + 1)
-    // The scene follows the hour: dawn, day, sunset, night.
+    if (isFull) void redraw($)
+    // The scene follows the hour: dawn, the sunset from nine to eight, night.
     void syncScene($).catch(() => undefined)
   })
   try {
@@ -1116,22 +1238,9 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // /clear, /resume and /branch start another conversation and reset $.state: set it up again.
-  on('classic.SessionStart', async ($, e, next) => {
-    if (inert || isOff) return next(e)
-    const result = await next(e)
-    if (e.source === 'clear' || e.source === 'resume' || e.source === 'fork') {
-      try {
-        // The hooks beneath can take seconds; by then the mod's own check (see session.end)
-        // may have set this conversation up. Once is enough: a second pass would place a second card.
-        if (didSelfSetup) didSelfSetup = false
-        else await startSession($, true)
-      } catch (err) {
-        $.ui.log(`vice-code: session setup failed: ${String(err).slice(0, 200)}`)
-      }
-    }
-    return result
-  }).catch(($, e, next) => next(e))
+  // No hook stands on a classic.* event or on session.compact: an app's built-in plugin can
+  // send those on past every mod the person installed, and the engine then prints a
+  // "hook was skipped" row in each conversation. What they did is done below instead.
 
   // A window that attaches after the session began gets the look, and Lite's first card, then.
   on('session.attach', async ($, e, next) => {
@@ -1162,16 +1271,16 @@ export const register: Register = (on, options) => {
 
   on('session.end', async ($, e, next) => {
     if (inert || isOff) return next(e)
-    // /clear and /resume switch conversations without a session.start.
+    // /clear, /resume and /branch switch conversations without a session.start.
     if (e.reason === 'clear' || e.reason === 'resume') {
-      if (isFull) await resetConversation($)
-      // classic.SessionStart sets the next conversation up where this module hears it. In
-      // the app a plugin above can pass that hook by, so a moment later the mod checks.
+      // Every hook shares one short bound: the event goes on at once, the watch runs after it.
+      const oldId = typeof e.sessionId === 'string' && e.sessionId ? e.sessionId : await $.session.id().catch(() => '')
       needsSetup = true
-      didSelfSetup = false
-      $.clock.after(600, () => {
-        void setUpIfNeeded($).catch(() => undefined)
-      })
+      endedBy = e.reason
+      lastContext = null
+      void (isFull ? resetConversation($) : Promise.resolve())
+        .catch(() => undefined)
+        .then(() => watchNewConversation($, oldId))
     }
     return next(e)
   })
@@ -1251,6 +1360,15 @@ export const register: Register = (on, options) => {
         models,
       }
     })
+    // A turn that died on an API error, with or without earlier steps that worked: a full
+    // window makes it a bust, an outage a stalled ride.
+    if (isMain && e.reason === 'error') {
+      try {
+        await onTurnError($, e.durationMs)
+      } catch {
+        // the rap sheet is a nicety: never get in the way of the error itself
+      }
+    }
     if (isMain && e.reason === 'answer') {
       // An answer to a turn that began after the bust: the limit is not blocking (extra usage, or a reset).
       const lim = await read($, limits)
@@ -1279,49 +1397,10 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // A turn that died on an API error: a rate limit is a bust, an outage a stalled ride.
-  on('classic.StopFailure', async ($, e, next) => {
-    if (inert || isOff || !isFull) return next(e)
-    const result = await next(e)
-    try {
-      if (e.error === 'rate_limit') {
-        await refreshUsage($, false)
-        const now = await $.clock.now()
-        let fresh: { kind: BustKind; until: number | null } | null = null
-        // A window the mod can see explains it, or a hidden one does (a model's weekly cap, overage).
-        const after = await update($, limits, (v): LimitsState => {
-          fresh = null
-          if (v.mem.busted) return v
-          fresh = rejectedBy(v)
-          return { ...v, mem: { ...v.mem, busted: { ...fresh, sticky: true, since: now }, bustedKey: windowKey(v.short) } }
-        })
-        const bust = fresh as { kind: BustKind; until: number | null } | null
-        if (bust) {
-          await saveWanted($, after.mem)
-          await announce($, [{ type: 'busted', kind: bust.kind, until: bust.until }])
-          scheduleReset($, after, now)
-        }
-      } else if ((e.error === 'overloaded' || e.error === 'server_error') && e.agent_id === undefined) {
-        await update($, live, v => (v ? { ...v, stalls: (v.stalls ?? 0) + 1 } : v))
-        if (opts.toasts) $.ui.toast(LABELS[(await read($, env)).lang].wanted.stall)
-      }
-    } catch {
-      // the rap sheet is a nicety: never get in the way of the error itself
-    }
-    return result
-  }).catch(($, e, next) => next(e))
-
-  on('session.compact', async ($, e, next) => {
-    if (inert || isOff || !isFull) return next(e)
-    const result = await next(e)
-    if (e.trigger !== 'precompute' && e.agentId === undefined && !('skip' in result)) {
-      await medkit($, e.trigger, result.tokensBefore ?? null, result.tokensAfter ?? null)
-    }
-    return result
-  }).catch(($, e, next) => next(e))
-
   on('session.measure', async ($, e, next) => {
     if (inert || isOff || !isFull) return next(e)
+    // A sharp drop in the context is a compaction: a medkit.
+    if (e.changed.includes('context') && typeof e.context.tokens === 'number') await noteContext($, e.context.tokens).catch(() => undefined)
     // A new model can bring another context window and auto-compact threshold.
     if (e.changed.includes('context') && e.context.window !== (await read($, hud)).window) await refreshUsage($, true)
     await applyUsage($, e.context.percent ?? null, e.context.tokens ?? null, e.cost?.usd)
@@ -1378,7 +1457,7 @@ export const register: Register = (on, options) => {
     if (sub === 'switch') {
       isSwitchShown = !isSwitchShown
       await choose($, SWITCH_KEY, isSwitchShown, opts.switch)
-      await update($, tick, n => n + 1)
+      await redraw($)
       return { text: isSwitchShown ? L.command.switchShown : L.command.switchHidden }
     }
     if (isOff) return { text: L.command.isOff }
@@ -1482,24 +1561,39 @@ export const register: Register = (on, options) => {
     // The switch: Off, Look, Game. In an app window it stands above the prompt in every
     // state, off included: a switch that hid itself when off could not be turned back on.
     // A terminal keeps its band for the game; there the same three are /vice commands.
-    // It is a row of the app's own buttons, the position in force drawn as the main one.
+    // Three of the app's own buttons, all with the same chrome: the position in force is
+    // marked with a dot and drawn at full strength, the other two dim. The label is body
+    // text, so it sits on the buttons' line. The dim part is a Text inside the Button, not
+    // the Button's own dimColor, which the app's band takes as "tuck into the … menu".
     const S = LABELS[(await read($, env)).lang].switch
     // The press hands its promise back: the surface redraws the row once the change is done, not before.
     const press = (mode: 'off' | 'lite' | 'full') => () => inTurn(() => setMode($, mode))
     let toggle = null
     if (isSwitchShown && (e.surface === 'desktop' || e.surface === 'mobile')) {
       const { Box, Button, Text } = $.ui.resolve(e)
+      const inForce = isOff ? 'off' : isFull ? 'full' : 'lite'
+      const position = (mode: 'off' | 'lite' | 'full', word: string) => {
+        const isOn = mode === inForce
+        const label = isOn ? `● ${word}` : word
+        return (
+          <Button key={`mode-${mode}`} label={label} variant="secondary" onPress={press(mode)}>
+            {isOn ? label : <Text dimColor>{word}</Text>}
+          </Button>
+        )
+      }
       toggle = (
-        <Box key="switch" flexDirection="row" alignItems="center" gap="xs">
-          <Text size="footnote" dimColor>Vice Code</Text>
-          <Button key="mode-off" label={S.off} variant={isOff ? 'primary' : 'secondary'} onPress={press('off')} />
-          <Button key="mode-lite" label={S.lite} variant={!isOff && !isFull ? 'primary' : 'secondary'} onPress={press('lite')} />
-          <Button key="mode-full" label={S.full} variant={!isOff && isFull ? 'primary' : 'secondary'} onPress={press('full')} />
+        <Box key="switch" flexDirection="row" alignItems="center" gap="sm">
+          <Text dimColor>Vice Code</Text>
+          {position('off', S.off)}
+          {position('lite', S.lite)}
+          {position('full', S.full)}
         </Box>
       )
     }
     const alone = () => {
       if (toggle === null || (e.surface !== 'desktop' && e.surface !== 'mobile')) return others
+      // No other mod has a row: the switch stands alone, with no wrapper around it.
+      if (others === null || others === undefined) return toggle
       const { Box } = $.ui.resolve(e)
       return (
         <Box flexDirection="column" gap="xs">
@@ -1664,7 +1758,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" gap="sm" paddingY="sm">
           {/* The one picture that is sure to feel the pointer: a row's frame takes hover, the backdrop may not. */}
-          <Svg isInteractive source={stripSvg(d.tod, sc.paper, 'vl')} alt={`${L.sceneAlt}, ${TOD_LABEL[en.lang][d.tod].toLowerCase()}`} />
+          <Svg isInteractive source={stripSvg(sceneOf(d.tod), sc.paper, 'vl')} alt={`${L.sceneAlt}, ${TOD_LABEL[en.lang][sceneOf(d.tod)].toLowerCase()}`} />
           <Box flexDirection="column">
             <Text size="caption" dimColor>{`Vice Code · ${d.forLine}`}</Text>
             <Text size="title" weight="semibold">{d.title}</Text>
@@ -1738,7 +1832,7 @@ export const register: Register = (on, options) => {
       const hasScene = isBackdropDrawn && (e.surface === 'desktop' || e.surface === 'mobile')
       return (
         <Box flexDirection="column" gap="sm" paddingY="sm">
-          {!hasScene && <Svg isInteractive source={stripSvg(d.tod, sc.paper, 'vw')} alt={`${L.sceneAlt}, ${TOD_LABEL[s.env.lang][d.tod].toLowerCase()}`} />}
+          {!hasScene && <Svg isInteractive source={stripSvg(sceneOf(d.tod), sc.paper, 'vw')} alt={`${L.sceneAlt}, ${TOD_LABEL[s.env.lang][sceneOf(d.tod)].toLowerCase()}`} />}
           <Box flexDirection="column">
             <Text size="caption" dimColor>{`Vice Code · ${d.forLine}`}</Text>
             <Text size="title" weight="semibold">{d.greeting}</Text>
@@ -1834,7 +1928,7 @@ export const register: Register = (on, options) => {
     // app keeps the backdrop out of the pointer's reach (an inert layer under the
     // conversation), so the sky here moves by its own wave; the card's banner is the
     // picture that answers the pointer.
-    return <Svg isInteractive source={backdropSvg(sc.tod, sc.paper, heat, flash)} alt={`${LABELS[lang].sceneAlt}, ${TOD_LABEL[lang][sc.tod].toLowerCase()}`} />
+    return <Svg isInteractive source={backdropSvg(sceneOf(sc.tod), sc.paper, heat, flash)} alt={`${LABELS[lang].sceneAlt}, ${TOD_LABEL[lang][sceneOf(sc.tod)].toLowerCase()}`} />
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
@@ -1850,7 +1944,7 @@ export const register: Register = (on, options) => {
       const { Box, Button, Link, Svg, Text } = $.ui.resolve(e)
       return (
         <Box flexDirection="column" gap="sm">
-          <Svg isInteractive source={stripSvg(tod, paper, 'vp')} alt={`${L.sceneAlt}, ${TOD_LABEL[s.env.lang][tod].toLowerCase()}`} />
+          <Svg isInteractive source={stripSvg(sceneOf(tod), paper, 'vp')} alt={`${L.sceneAlt}, ${TOD_LABEL[s.env.lang][sceneOf(tod)].toLowerCase()}`} />
           <Box flexDirection="column">
             <Text size="caption" dimColor>Vice Code</Text>
             <Text size="heading" weight="semibold">{L.statsTitle}</Text>

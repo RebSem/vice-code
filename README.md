@@ -2,13 +2,11 @@
 
 ![Mock-up: Vice Code Lite in a dark window, the skyline behind the conversation and the hello card](docs/img/lite-dark.png)
 
-A Miami sunset for Claude Code: the app's colors and a skyline set in symbols behind your conversation. One command adds a game where your usage limits are a wanted level.
+A Miami sunset for Claude Code: the app's colors and a skyline at dusk, printed in fine dots behind your conversation. One command adds a game where your usage limits are a wanted level.
 
 Unofficial fan mod. Not affiliated with or endorsed by Anthropic or any game publisher.
 
 > По-русски: [как потестить](docs/TESTING.md), [лимиты как розыск](docs/LIMITS.md), [дизайн](docs/DESIGN.md).
-
-![The look arriving in a window, then the game: stars, a helicopter and the busted card](docs/img/demo.gif)
 
 ## Install
 
@@ -38,7 +36,7 @@ Don't see it?
 ![Mock-up: Lite in a light window, the same scene on light paper](docs/img/lite-light.png)
 
 - The app's own colors: violet stock, pink accent, orange warnings, in a light and a dark version.
-- A skyline set in symbols behind the conversation. It follows your local hour (dawn, day, sunset, night) and moves in slow steps: the sun's blind, palms, the tide, a boat, birds, clouds.
+- A skyline at dusk behind the conversation, drawn at a fine grain: a slatted sun going down behind a deco tower and palms, and a glow that runs across the water to the bottom edge of the window. By day and in the evening it is the sunset, dawn has a softer light, and at night the moon is up and the windows are lit. It moves in slow steps: the sun's slats, the palms, the shimmer on the water, the stars.
 - One hello card after install, with a banner whose sky lights up under the pointer and a **Turn on the game** button.
 - In a terminal or an editor, which draw neither the colors nor the skyline, Lite is a small banner card at the top of each new conversation.
 - Lite reads nothing from your history and counts nothing: no HUD, no wanted level, no toasts.
@@ -49,7 +47,7 @@ Don't see it?
 
 - Your 5-hour limit is a wanted level, the weekly limit is armor, context is health.
 - A HUD line above the prompt, gear labels on tool rows, Miami spinner lines, a stats pane from your local history.
-- The skyline shows the heat: patrol lights at three stars, a car running the shore and a helicopter at four, two helicopters at five.
+- The skyline shows the heat: patrol lights on the shore at three stars, a helicopter with a searchlight at four, two helicopters at five.
 - When a limit runs out, a busted card says which one and when you are out.
 
 ![Mock-up: the busted card in the conversation](docs/img/busted.png)
@@ -61,7 +59,7 @@ Switch with the three buttons above the prompt in the app (**Off · Look · Game
 | | |
 |---|---|
 | **Wanted level** | The 5-hour limit as stars: ★ at 40%, ★★★ at 75% (the lights flash for a few seconds), ★★★★★ at 97%. A toast comes once per level from two stars up, with the time the cops back off. Get through a window after three stars and it counts as an escape. |
-| **Busted** | When a limit runs out, or a request is turned away for one, a busted card stands in the conversation where Claude went quiet: which limit, and when you are out. It folds to one line when the window resets or Claude answers again. Nothing is blocked. With extra usage on, a window past 100% shows as "on credit" instead. |
+| **Busted** | When a limit runs out, a busted card stands in the conversation where Claude went quiet: which limit, and when you are out. A turn that dies for another reason (an overload, an outage) is a stalled ride on the rap sheet, not a bust. It folds to one line when the window resets or Claude answers again. Nothing is blocked. With extra usage on, a window past 100% shows as "on credit" instead. |
 | **HUD** | One quiet line above the prompt: wanted level with the reset time, health (context left before auto-compact), armor (what is left of the weekly limit) and cash (the session at API prices). `hud` in the settings makes it compact or turns it off. |
 | **Welcome card** | Each new conversation opens with a card: your week in numbers, a tip about Claude Code and a countdown to 19 November 2026. Where the skyline already stands behind it, the card is words alone. |
 | **Medkits** | A compaction is a medkit: the toast says how many tokens it freed. Health under 15% warns you once. |
@@ -153,26 +151,26 @@ Prompt text, answers and code are never stored. Sound plays only when you ask fo
 - The look (colors and skyline) is drawn only by the desktop and mobile apps. The terminal and VS Code keep their own colors.
 - What was checked without a window: the engine was run headless, the way the desktop app runs it, on 2.1.325 and 2.1.319, with a desktop client attached. The mod woke, the look was accepted, the hello card and the backdrop were drawn, and the `/vice` commands answered. What the mod's tests cannot check is pixels: the test kit sees the tree of elements, not the window.
 - The skyline behind the conversation does not react to the pointer. The desktop app keeps a backdrop in an inert layer under the conversation, so only the hello card's banner, which is a row in the conversation, lights up under it.
-- The app lays its own frosted veil over the scene under the conversation column and the sidebar, to keep text readable. The scene is crisp at the sides of the window and soft behind the words.
+- The app lays its own veil over the scene under the conversation column and the sidebar, to keep text readable. The mod asks for no blur, so the marks stay crisp there and are only thinner; the scene is at full strength at the sides of the window.
 - Whether your build of the app paints a mod's colors, and whether it draws backdrops at all, is the app's decision: both are recent features. Where the backdrop is not drawn you still get the hello card, and the game with `/vice full`.
 - With `paper` on `auto` the scene follows the app's own light or dark setting. `/vice paper dark` and `/vice paper light` change the scene alone: the window keeps its own mode.
 - A session has one theme: Vice Code replaces another mod's look, and the other mod replaces Vice Code's.
 - The engine sends no event when a usage window resets, so the busted card folds a few seconds after the reset, on the mod's own alarm.
-- A limit the numbers do not show (a single model's weekly cap) is seen only when a request is turned away; its release time is unknown, and the card says so.
+- A mod is not told why a turn failed. A limit the numbers do not show (a single model's weekly cap) therefore reads as a stalled ride, the same as an outage; only a window at 100% makes a bust.
 
 If the look never appears in the app, please open an issue with the `vice-code:` lines from `claude --debug`.
 
 ## How it is made
 
-A Claude Code mod made of function hooks (`hooks/register.tsx`). Every picture is built from one grid: the sky is a field of glyphs that brightens toward the horizon, while the city, the palms and the slatted sun are square tiles, so the silhouette stays clear (`hooks/lib/tiles.ts`). The same code draws the backdrop, the card banners, the busted banner, the icon and the terminal's pixels. The colors come from `makeColors` (`hooks/make-colors.js`) with a few anchors in `hooks/lib/look.ts`, and go out with the scene in one `$.theme.set`.
+A Claude Code mod made of function hooks (`hooks/register.tsx`). The backdrop and the cards' banner are drawn by `hooks/lib/dusk.ts` in three kinds of mark: the glow is an ordered dither of small dots in five close inks, one smooth tone centred on the sun and mirrored into the water; the sky is a sparse field of small glyphs; the city, the palms, the far shore and the slatted sun are crisp silhouettes in fine pixels. The busted banner, the icon and the terminal's pixels keep a coarser grid of tiles (`hooks/lib/tiles.ts`). The colors come from `makeColors` (`hooks/make-colors.js`) with a few anchors in `hooks/lib/look.ts`, and go out with the scene in one `$.theme.set`.
 
-Motion is stepped: every animation uses `steps()`, so the scene repaints a few times a second at most, and it rests in a composed picture when your system asks for reduced motion. In narrow windows and on phones the two sides of the scene step toward the middle. Words and numbers are the app's own text, in its fonts and theme colors.
+Motion is stepped: every animation uses `steps()` and holds each frame for ten seconds or more, and the scene rests in a composed picture when your system asks for reduced motion. In narrow windows and on phones the sun and its tower step toward the middle, so the picture stays whole. Words and numbers are the app's own text, in its fonts and theme colors.
 
-The mod draws everything from code. It ships no audio files, and the only images in the repository are the icon and this page's pictures: the radio and the effects are synthesized on first use. The tile technique follows Anthropic's `theme-examples` plugin, which is published to be read, copied and changed. Real Miami places are used as flavour. No game assets, logos, characters or music are included. `hooks/make-colors.js` and its `.d.ts` are Anthropic's theme helper, copied unchanged from Claude Code's plugin-authoring kit, as its guide tells a mod to do. The design notes are in [docs/DESIGN.md](docs/DESIGN.md) (in Russian).
+The mod draws everything from code. It ships no audio files, and the only images in the repository are the icon and this page's pictures: the radio and the effects are synthesized on first use. The dither, glyph and tile techniques follow Anthropic's `theme-examples` plugin, which is published to be read, copied and changed. Real Miami places are used as flavour. No game assets, logos, characters or music are included. `hooks/make-colors.js` and its `.d.ts` are Anthropic's theme helper, copied unchanged from Claude Code's plugin-authoring kit, as its guide tells a mod to do. The design notes are in [docs/DESIGN.md](docs/DESIGN.md) (in Russian).
 
 ## Development
 
-The tests (70) run in Claude Code's test kit; they pass on 2.1.319 (terminal CLI) and 2.1.325 (the desktop app's engine).
+The tests (77) run in Claude Code's test kit; they pass on 2.1.319 (terminal CLI) and 2.1.325 (the desktop app's engine).
 
 ```bash
 claude plugin test .

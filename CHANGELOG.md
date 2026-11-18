@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.0 — 2026-11-18
+
+The skyline redrawn at a finer grain, after the first day in a real window.
+
+### Changed
+
+- **The skyline is redrawn at four times the resolution.** The first scene was set in 16-unit tiles, which in a real window read as big squares, and its glow stopped at the horizon. The new one (`hooks/lib/dusk.ts`) is printed in three kinds of fine mark: a dithered glow of 4-unit dots in five close inks, a sparse field of small glyphs for the sky, and crisp silhouettes in fine pixels for the city, the palms, the far shore and the slatted sun. The glow is one smooth tone centred on the sun; the water mirrors it and carries it to the bottom edge of the window.
+- **The postcard stands at the left.** The sun goes down behind a stepped deco tower with a spire, a lower block and two palms, in the strip beside the conversation column; a quieter group answers it at the right, and the middle holds only sky, a far shore and water. In narrow windows the sun and its tower step toward the middle.
+- **No blur.** The mod now asks the app for a veil without blur (`glass: { blur: 0, opacity: 0.58 }`), so the marks stay crisp under the conversation instead of melting into blobs. The inks are chosen for that veil: under the column body text keeps 7:1 and muted text 4.5:1.
+- **By day it is the sunset too.** From nine in the morning to eight in the evening the scene is the sunset; dawn has a softer light, and at night the moon is up, the windows are lit and the glow turns magenta. The high noon sun of 1.3.0 is gone: it was the palest picture and the one seen most.
+- The banner of the hello card, the welcome card and the stats pane is the same scene in small; its sky still lights up under the pointer. The busted banner, the icon and the terminal's pixels keep the coarser tile grid.
+- **The switch reads as one control.** Off, Look and Game are three like buttons on the line of the label; the position in force carries a dot and full-strength text, the other two are dim. 1.3.0 drew the position in force as a filled main button next to two bare words, which sat on different lines.
+- **A bust needs a full window.** Until now the mod was told why a turn failed by `classic.StopFailure`; that hook is gone (see below), and a mod's own tier is not told the reason. So a turn that dies on an API error is a bust only when a window reads 100% or more; anything else is a stalled ride, and a turn that died within three seconds (a lapsed login, a request refused outright) is neither. A limit the numbers do not show (one model's weekly cap) now reads as a stalled ride.
+- The medkit toast says only what the mod knows: "Medkit: 150K → 42K tokens." A drop from a context under 20K tokens is not counted as a compaction.
+
+### Fixed
+
+- **No more "hook was skipped" row in the conversation.** In the desktop app a plugin of the app's own runs first on every `classic.*` event and on `session.compact` and passes other plugins' hooks by; the engine then says so in a row of the conversation, once per conversation. The mod no longer stands on those events. A new conversation is found by the session id changing after `session.end`, a compaction by the context dropping between two readings, and a failed turn by `turn.complete`.
+- **The card comes after `/clear` in every engine.** The engine counts the command itself as a turn of the new conversation, which the mod took for a resumed history and skipped the welcome card (the game) and the banner (a terminal). A resumed conversation still gets no card.
+- A turn that failed after some of its steps had worked is counted like any other failed turn.
+- A second `/clear` right after the first no longer leaves two watches racing to set the conversation up.
+
+### Checked
+
+- The engine of the desktop app (2.1.325) was run the way the app runs it, under an empty config folder, with a client that redraws when the engine says a row changed: no "hook was skipped" row appears, the scene and the colors are handed out, the switch follows every change of mode made by a command or a press, through `/clear` included, and the cards come after `/clear`.
+- Tests: 77, passing on Claude Code 2.1.319 and 2.1.325.
+
 ## 1.3.0 — 2026-11-18
 
 A switch you can see.

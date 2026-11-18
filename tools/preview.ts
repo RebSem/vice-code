@@ -27,9 +27,10 @@ import { bustedData, cardData, hudData, liteCardData, paneModel, spinnerWord, st
 import { emptyMemory, fmtResetAt } from '../hooks/lib/wanted'
 import type { Snapshot } from '../hooks/lib/model'
 import type { Paper } from '../hooks/lib/tiles'
-import { backdropSvg, bustedSvg, scenePixels, stripSvg } from '../hooks/lib/tiles'
+import { backdropSvg, stripSvg } from '../hooks/lib/dusk'
+import { bustedSvg, scenePixels } from '../hooks/lib/tiles'
 import { totalsFromSummaries } from '../hooks/lib/stats'
-import { localOffsetMinutes } from '../hooks/lib/time'
+import { localOffsetMinutes, sceneOf } from '../hooks/lib/time'
 import type { TimeOfDay } from '../hooks/lib/time'
 
 // Next to the bundle (preview/out/preview.mjs), wherever it is run from.
@@ -183,10 +184,10 @@ const id = (p: string) => `${p}${++uid}`
 /** A scene as an image: its own document, so its styles stay inside it and its CSS animates it. */
 const img = (svg: string, alt: string) => `<img alt="${esc(alt)}" src="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}">`
 
-/** The switch above the prompt, as the AbovePrompt hook draws it: the position in force is the main button. */
+/** The switch above the prompt, as the AbovePrompt hook draws it: three like buttons, the position in force marked with a dot, the others dim. */
 function deskSwitch(lang: Lang, mode: 'off' | 'lite' | 'full'): string {
   const S = LABELS[lang].switch
-  return `<span class="grp sw"><span class="dim">Vice Code</span>${(['off', 'lite', 'full'] as const).map(m => `<span class="btn${m === mode ? ' on' : ''}">${esc(S[m])}</span>`).join('')}</span>`
+  return `<span class="grp sw"><span class="dim">Vice Code</span>${(['off', 'lite', 'full'] as const).map(m => (m === mode ? `<span class="btn on">● ${esc(S[m])}</span>` : `<span class="btn"><span class="dim">${esc(S[m])}</span></span>`)).join('')}</span>`
 }
 
 /** The band of a window in Lite: the switch alone. */
@@ -247,7 +248,7 @@ function deskHello(lang: Lang, nowMs: number, paper: Paper): string {
   const d = liteCardData({ lang, player: '', offset }, nowMs)
   return (
     `<div class="rowcard">` +
-    live(stripSvg(d.tod, paper, id('hs')), L.sceneAlt) +
+    live(stripSvg(sceneOf(d.tod), paper, id('hs')), L.sceneAlt) +
     `<div><div class="cap dim">Vice Code · ${esc(d.forLine)}</div><div class="title">${esc(d.title)}</div></div>` +
     `<div class="say">${esc(d.body)}</div>` +
     (d.news ? `<div class="foot"><span class="dim">${esc(d.news.before)}</span><span class="clay md">${esc(d.news.strong)}</span><span class="dim">${esc(d.news.after)}</span></div>` : '') +
@@ -282,7 +283,7 @@ function deskWindow(lang: Lang, paper: Paper, transcript: string, band: string, 
   const sessions = ru ? ['Починить логин', 'Лендинг: правки', 'Бот для записи', 'Миграция базы', 'Отчёт за неделю'] : ['Fix the login', 'Landing page edits', 'Booking bot', 'Database migration', 'Weekly report']
   return (
     `<div class="win desk ${paper}${opt.back ? ' glass' : ''}${opt.isStock ? ' stock' : ''}">` +
-    (opt.back ? `<div class="bg">${img(backdropSvg(opt.back.tod, paper, opt.back.heat, opt.back.flash === true), '')}</div>` : '') +
+    (opt.back ? `<div class="bg">${img(backdropSvg(sceneOf(opt.back.tod), paper, opt.back.heat, opt.back.flash === true), '')}</div>` : '') +
     `<div class="bar"><i></i><i></i><i></i><span>${ru ? 'Claude Code — десктоп, макет' : 'Claude Code — desktop, mock-up'}</span></div>` +
     `<div class="split"><div class="side">${sessions.map((t, i) => `<span${i === 0 ? ' class="on"' : ''}>${esc(t)}</span>`).join('')}</div>` +
     `<div class="chat">` +
@@ -465,8 +466,10 @@ function mocks(lang: Lang): Record<string, string> {
 
 const M = { ru: mocks('ru'), en: mocks('en') }
 const both = (key: string) => `<div data-l="ru">${M.ru[key] ?? ''}</div><div data-l="en">${M.en[key] ?? ''}</div>`
-const scenes = (Object.keys(times) as TimeOfDay[])
-  .flatMap(tod => (['dark', 'light'] as const).map(paper => `<figure class="scene">${img(stripSvg(tod, paper, id('tod')), TOD_LABEL.en[tod])}<figcaption>${esc(TOD_LABEL.ru[tod].toLowerCase())} · ${paper === 'dark' ? 'тёмное окно' : 'светлое окно'}</figcaption></figure>`))
+// Three pictures: by day the sun stays on the horizon, so day and evening share the sunset.
+const SCENE_CAPTION: Partial<Record<TimeOfDay, string>> = { dawn: 'рассвет', sunset: 'день и закат', night: 'ночь' }
+const scenes = (['dawn', 'sunset', 'night'] as const)
+  .flatMap(tod => (['dark', 'light'] as const).map(paper => `<figure class="scene">${img(stripSvg(tod, paper, id('tod')), TOD_LABEL.en[tod])}<figcaption>${esc(SCENE_CAPTION[tod] ?? '')} · ${paper === 'dark' ? 'тёмное окно' : 'светлое окно'}</figcaption></figure>`))
   .join('')
 
 const install = [

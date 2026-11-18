@@ -1,8 +1,8 @@
 {
   "name": "vice-code",
   "displayName": "Vice Code",
-  "version": "1.3.0",
-  "description": "A Miami sunset for Claude Code: the app's colors and a skyline set in symbols behind the conversation. One command adds the game: your usage limits as a wanted level, with a HUD, stats and a radio. Unofficial fan mod, not affiliated with or endorsed by Anthropic or any game publisher.",
+  "version": "1.4.0",
+  "description": "A Miami sunset for Claude Code: the app's colors and a skyline at dusk behind the conversation. One command adds the game: your usage limits as a wanted level, with a HUD, stats and a radio. Unofficial fan mod, not affiliated with or endorsed by Anthropic or any game publisher.",
   "author": {
     "name": "RebSem",
     "url": "https://github.com/RebSem"
@@ -48,7 +48,7 @@
     "backdrop": {
       "type": "boolean",
       "title": "Skyline backdrop",
-      "description": "Draw the skyline behind the conversation in the desktop and mobile apps. It follows the hour, and in the game it shows the wanted level: patrol lights, then a helicopter. Toggle any time with /vice backdrop",
+      "description": "Draw the skyline behind the conversation in the desktop and mobile apps. By day it is the sunset, at night the moon is up; in the game it shows the wanted level: patrol lights, then a helicopter. Toggle any time with /vice backdrop",
       "default": true
     },
     "paper": {

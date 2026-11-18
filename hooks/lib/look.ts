@@ -9,7 +9,7 @@ import { makeColors } from '../make-colors.js'
 /** Meaning stays where the app has it: danger is a red, success a green, warning an amber. */
 const ROLES = { accent: '#f0468c', danger: '#e5484d', success: '#2fb894', warning: '#f09a3e', pro: '#a878f0' }
 
-/** `surface-0` of each mode is the stock the scene prints on (tiles.ts, PAGE). */
+/** `surface-0` of each mode is the stock the sunset prints on (`s0` in dusk.ts, PAGE in tiles.ts). */
 const LIGHT = {
   gray: {
     anchors: {
