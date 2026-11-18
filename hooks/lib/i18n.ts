@@ -64,7 +64,7 @@ export type Labels = {
    * Lite's hello card. `body` is for a window that draws the look; `bodyPlain` for a
    * terminal or an editor, which draw neither the colors nor the scene.
    */
-  lite: { title: string; body: string; bodyPlain: string; hint: string; hintShort: string; fan: string }
+  lite: { title: string; body: string; bodyScene: string; bodyPlain: string; hint: string; hintShort: string; fan: string }
   /** Under the welcome card on the terminal, where a row in the conversation has no hotkeys. */
   welcomeHint: string
   /** Said once after install: what the three meters stand for. */
@@ -197,7 +197,8 @@ export const LABELS: Record<Lang, Labels> = {
     },
     lite: {
       title: 'Добро пожаловать в Майами.',
-      body: 'Claude Code теперь в цветах заката, а за разговором стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке.',
+      body: 'Claude Code теперь в цветах заката, а за разговором стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке выше.',
+      bodyScene: 'За разговором теперь стоит город из символов. Он живёт по часам: рассвет, день, закат, ночь. Проведи курсором по небу на картинке выше.',
       bodyPlain: 'Цвета и город за разговором рисуют десктопное и мобильное приложения. Здесь можно включить игру: /vice full',
       hint: '/vice full — игра: розыск, шкалы, статистика · /vice paper dark — под тёмное окно · /vice off — выключить',
       hintShort: '/vice full — игра · /vice off — выключить',
@@ -226,8 +227,8 @@ export const LABELS: Record<Lang, Labels> = {
       modeLite: 'Lite: только цвета и город за разговором. Игра: /vice full',
       paperHelp: '/vice paper dark — сцена на тёмной бумаге · /vice paper light — на светлой · /vice paper auto — как окно',
       paperSet: {
-        dark: 'Сцена на тёмной бумаге, цвета тёмные.',
-        light: 'Сцена на светлой бумаге, цвета светлые.',
+        dark: 'Сцена теперь на тёмной бумаге. Окно остаётся в своём режиме; /vice paper auto вернёт подстройку под окно.',
+        light: 'Сцена теперь на светлой бумаге. Окно остаётся в своём режиме; /vice paper auto вернёт подстройку под окно.',
         auto: 'Сцена снова подстраивается под окно.',
       },
       gameOnly: 'Это часть игры. Включить: /vice full',
@@ -343,7 +344,8 @@ export const LABELS: Record<Lang, Labels> = {
     },
     lite: {
       title: 'Welcome to Miami.',
-      body: 'Claude Code now wears the sunset: its colors, and a skyline set in symbols behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture.',
+      body: 'Claude Code now wears the sunset: its colors, and a skyline set in symbols behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture above.',
+      bodyScene: 'A skyline set in symbols now stands behind the conversation. It follows the hour: dawn, day, sunset, night. Run the pointer across the sky in the picture above.',
       bodyPlain: 'The colors and the skyline are drawn by the desktop and mobile apps. Here you can turn on the game: /vice full',
       hint: '/vice full — the game: wanted level, HUD, stats · /vice paper dark — match a dark window · /vice off',
       hintShort: '/vice full — the game · /vice off — turn it off',
@@ -372,8 +374,8 @@ export const LABELS: Record<Lang, Labels> = {
       modeLite: 'Lite: the colors and the skyline only. The game: /vice full',
       paperHelp: '/vice paper dark — the scene on dark stock · /vice paper light — on light paper · /vice paper auto — follow the window',
       paperSet: {
-        dark: 'The scene prints on dark stock, with dark colors.',
-        light: 'The scene prints on light paper, with light colors.',
+        dark: 'The scene now prints on dark stock. The window keeps its own mode; /vice paper auto goes back to following it.',
+        light: 'The scene now prints on light paper. The window keeps its own mode; /vice paper auto goes back to following it.',
         auto: 'The scene follows the window again.',
       },
       gameOnly: 'That is part of the game. Turn it on: /vice full',

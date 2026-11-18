@@ -7,7 +7,7 @@ import { fmtCompact, fmtMoney } from '../hooks/lib/format'
 import { bustedRowId, isTooOld } from '../hooks/lib/model'
 import { mergeSummaries, summarizeText } from '../hooks/lib/history'
 import { sound } from '../hooks/lib/synth'
-import { lookFor, unpainted } from '../hooks/lib/look'
+import { look, unpainted } from '../hooks/lib/look'
 import { backdropSvg, bustedSvg, iconSvg, PAGE, scenePixels, stripSvg } from '../hooks/lib/tiles'
 import { GAME_LABEL } from '../hooks/lib/time'
 import { countBusts, emptyMemory, fmtLeft, fmtResetAt, mergeMemory, rejectedBy, starsFor } from '../hooks/lib/wanted'
@@ -72,6 +72,11 @@ function stubEngine(on: On, stubs: Stubs = {}) {
   // Rows placed in the conversation, and what happened to the session's theme.
   const placed: string[] = []
   const themes: string[] = []
+  // Which modes of the colors each look carried (empty on an engine from before the colors).
+  const modes: string[] = []
+  // Any mode a look asked the window to switch to: none is ever expected.
+  const overrides: string[] = []
+  let rosterReads = 0
   // What the mod asked of the machine: processes run and folders listed.
   const runs: string[] = []
   const world = { surfaces: stubs.surfaces ?? ['desktop'], isLookDrawn: stubs.isLookDrawn ?? true }
@@ -83,12 +88,18 @@ function stubEngine(on: On, stubs: Stubs = {}) {
   on('theme.set', (_, e) => {
     // The newest engines name the scene `scene`, the ones before them `id`; an engine
     // from before the colors drops them, so a look of colors alone arrives empty there.
-    const look = e as { backdrop?: { scene?: string; id?: string }; colors?: unknown }
+    const look = e as { backdrop?: { scene?: string; id?: string }; colors?: unknown; overrideColorScheme?: string }
+    if (look.overrideColorScheme) overrides.push(look.overrideColorScheme)
     if (stubs.refusesColors && look.colors) throw new Error('theme.set: unknown member colors')
     themes.push(look.backdrop?.scene ?? look.backdrop?.id ?? 'colors')
+    const inputs = (look.colors as { inputs?: Record<string, unknown> } | undefined)?.inputs
+    if (inputs) modes.push(Object.keys(inputs).sort().join('+'))
     return { value: world.isLookDrawn ? { isDrawn: true, requestId: 'backdrop' } : { isDrawn: false, reason: 'no surface draws themes' } }
   })
-  on('session.surfaces', () => ({ value: world.surfaces as never }))
+  on('session.surfaces', () => {
+    rosterReads += 1
+    return { value: world.surfaces as never }
+  })
   on('session.attach', (_, e) => ({ clientId: e.clientId }))
   on('theme.clear', () => {
     themes.push('clear')
@@ -181,6 +192,9 @@ function stubEngine(on: On, stubs: Stubs = {}) {
     plays,
     placed,
     themes,
+    modes,
+    overrides,
+    rosterReads: () => rosterReads,
     runs,
     world,
   }
@@ -783,6 +797,7 @@ test('the backdrop shows the wanted level', { options: { mode: 'full', language:
 
 // ---------- Lite: the look alone ----------
 
+
 const BACKDROP = { plugin: 'vice-code', component: 'Backdrop', props: { scene: 'sunset', plugin: 'vice-code', glass: { blur: 12, opacity: 0.55 } }, surface: 'desktop' } as const
 const TOOL = { tool_use_id: 'tu1', tool: 'Bash', input: { command: 'npm test' }, isRunning: false, isErrored: false, isInterrupted: false }
 
@@ -942,7 +957,12 @@ test('/vice paper picks the stock by hand', { options: { language: 'en' } }, asy
   expect(dark, 'redrawn in place').not.toContain('prefers-color-scheme')
   expect(dark).toContain('--s0:#140e22')
   await scene.unmount()
-  expect(eng.themes, 'the look is sent again, for that one mode').toEqual(['sunset', 'sunset'])
+  expect(eng.themes, 'the look is sent again').toEqual(['sunset', 'sunset'])
+  // Both modes of the colors still go, and the window is not asked to change its own:
+  // the paper changes the scene alone. (An engine from before the colors sees none of them.)
+  expect(eng.modes.length === 0 || eng.modes.length === 2, 'every look carried the colors, or none could').toBe(true)
+  expect(eng.modes.every(m => m === 'dark+light')).toBe(true)
+  expect(eng.overrides).toHaveLength(0)
   expect((await $.command.run({ command: 'vice', args: 'paper', ...COMMAND })).text).toContain('/vice paper auto')
 })
 
@@ -1027,15 +1047,12 @@ test('an app session whose window is already there starts at once', { options: {
   expect(eng.placed.filter(id => id.startsWith('welcome-'))).toHaveLength(1)
 })
 
-test('the look gives both modes, or the one the paper asks for, and the desktop paints it', async () => {
-  for (const paper of ['auto', 'light', 'dark'] as const) {
-    expect(unpainted(paper), paper).toBeUndefined()
-  }
-  expect(Object.keys(lookFor('auto').colors.inputs).sort()).toEqual(['dark', 'light'])
-  expect(Object.keys(lookFor('dark').colors.inputs)).toEqual(['dark'])
+test('the look gives both modes and the desktop paints it', async () => {
+  expect(unpainted()).toBeUndefined()
+  expect(Object.keys(look().colors.inputs).sort()).toEqual(['dark', 'light'])
   // The page is the stock the scene prints on, so the picture has no edge.
-  expect(JSON.stringify(lookFor('auto').colors.inputs)).toContain(PAGE.dark)
-  expect(JSON.stringify(lookFor('auto').colors.inputs)).toContain(PAGE.light)
+  expect(JSON.stringify(look().colors.inputs)).toContain(PAGE.dark)
+  expect(JSON.stringify(look().colors.inputs)).toContain(PAGE.light)
 })
 
 test('a terminal is asked for the look once more, not on every turn', { options: { language: 'en' } }, async ($, on) => {
@@ -1085,4 +1102,60 @@ test('a banner cuts its sky finer than the backdrop does', async () => {
   const blocks = (svg: string) => svg.split('<g class="b ').length - 1
   expect(blocks(stripSvg('sunset', 'auto'))).toBeGreaterThan(30)
   expect(blocks(backdropSvg('sunset', 'auto'))).toBeGreaterThan(200)
+})
+
+test('a window that joined without saying it draws themes still counts as an app window', { options: { language: 'en' } }, async ($, on) => {
+  // The engine answers "not drawn" (nobody declared themes), yet a desktop window is on the roster.
+  const eng = stubEngine(on, { surfaces: ['desktop'], isLookDrawn: false })
+  await $.session.start({ cwd: '/', surface: null, isInteractive: false })
+  expect(eng.themes).toEqual(['sunset'])
+  expect(eng.placed.filter(id => id.startsWith('hello-')), 'the once-after-install card').toHaveLength(1)
+  // The next conversation does not get the card again, as in a window that draws the scene.
+  await $.classic.SessionStart({ source: 'clear' } as never)
+  expect(eng.placed.filter(id => id.startsWith('hello-'))).toHaveLength(1)
+  // And the first turn does not send the look again.
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await eng.settle()
+  expect(eng.themes).toEqual(['sunset', 'sunset'])
+})
+
+test('a dormant mod wakes at the first prompt if a window is there and no attach was heard', { options: { language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on, { surfaces: [] })
+  await $.session.start({ cwd: '/', surface: null, isInteractive: false })
+  expect(eng.themes).toHaveLength(0)
+  // A window got onto the roster, but the attach never reached the module.
+  eng.world.surfaces = ['desktop']
+  await $.prompt.submit({ text: 'fix the login callback', wait: false, origin: { kind: 'sdk' } })
+  expect(eng.themes).toEqual(['sunset'])
+  expect(eng.placed.filter(id => id.startsWith('hello-'))).toHaveLength(1)
+})
+
+test('a terminal with a phone attached keeps its card at the top of each conversation', { options: { language: 'en' } }, async ($, on) => {
+  // The phone joined without saying it draws themes; the terminal draws no look at all.
+  const eng = stubEngine(on, { store: { welcomed: 1 }, surfaces: ['terminal', 'mobile'], isLookDrawn: false })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(eng.placed.filter(id => id.startsWith('hello-'))).toHaveLength(1)
+  await $.classic.SessionStart({ source: 'clear' } as never)
+  expect(eng.placed.filter(id => id.startsWith('hello-')), 'the banner is the look in a terminal').toHaveLength(2)
+})
+
+test('a session nobody watches stops looking for a window after a few prompts', async ($, on) => {
+  const eng = stubEngine(on, { surfaces: [] })
+  await $.session.start({ cwd: '/', surface: null, isInteractive: false })
+  const atStart = eng.rosterReads()
+  for (let i = 0; i < 12; i++) {
+    await $.prompt.submit({ text: `job ${i}`, wait: false, origin: { kind: 'sdk' } })
+    await $.turn.start({ text: 'go', turnId: `t${i}` })
+  }
+  expect(eng.rosterReads() - atStart, 'a handful of looks, then none').toBeLessThanOrEqual(5)
+  expect(eng.themes).toHaveLength(0)
+})
+
+test('the card speaks of the colors only where the engine took them', { options: { language: 'en' } }, async ($, on) => {
+  const eng = stubEngine(on, { refusesColors: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const card = await $.ui.mount({ ...row(eng.placed[0] ?? ''), surface: 'desktop' })
+  expect(await card.find({ type: 'Text', text: /skyline set in symbols/ })).toBeDefined()
+  expect(await card.find({ type: 'Text', text: /its colors/ }), 'no colors were taken').toBeUndefined()
+  await card.unmount()
 })

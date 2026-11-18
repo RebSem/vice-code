@@ -1,7 +1,7 @@
 {
   "name": "vice-code",
   "displayName": "Vice Code",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "A Miami sunset for Claude Code: the app's colors and a skyline set in symbols behind the conversation. One command adds the game: your usage limits as a wanted level, with a HUD, stats and a radio. Unofficial fan mod, not affiliated with or endorsed by Anthropic or any game publisher.",
   "author": {
     "name": "RebSem",
@@ -70,7 +70,7 @@
     "playerName": {
       "type": "string",
       "title": "Player name",
-      "description": "Name on the loading card; empty uses your account name",
+      "description": "Name on the welcome card; empty uses your account name",
       "default": ""
     },
     "weapons": {

@@ -223,6 +223,8 @@ export type LiteCard = {
   title: string
   /** For a window that draws the look, and for a terminal or an editor, which draw none of it. */
   body: string
+  /** For a window whose engine took the scene but not the colors. */
+  bodyScene: string
   bodyPlain: string
   news: CardData['footer'] | null
   hint: string
@@ -239,6 +241,7 @@ export function liteCardData(env: Env, nowMs: number): LiteCard {
     forLine: L.forClaudeCode,
     title: L.lite.title,
     body: L.lite.body,
+    bodyScene: L.lite.bodyScene,
     bodyPlain: L.lite.bodyPlain,
     news: countdown(env, nowMs),
     hint: L.lite.hint,

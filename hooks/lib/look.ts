@@ -5,7 +5,6 @@
 import type { ThemeColors } from 'claude-code'
 
 import { makeColors } from '../make-colors.js'
-import type { Stock } from './tiles'
 
 /** Meaning stays where the app has it: danger is a red, success a green, warning an amber. */
 const ROLES = { accent: '#f0468c', danger: '#e5484d', success: '#2fb894', warning: '#f09a3e', pro: '#a878f0' }
@@ -40,28 +39,21 @@ const DARK = {
 
 export type Look = { colors: ThemeColors; problems: readonly string[] }
 
-const made: Partial<Record<Stock, Look>> = {}
+let made: Look | null = null
 
 /**
- * The colors for a paper: both modes when the scene follows the window, one mode when the
- * person picked a paper by hand, so the words suit the picture they asked for.
+ * The colors, always in both modes. The desktop app keeps the window's own mode whatever
+ * a look asks for, so a look that gave one mode alone would leave the other window with
+ * no colors of ours at all.
  */
-export function lookFor(paper: Stock): Look {
-  const cached = made[paper]
-  if (cached) return cached
-  const { theme, problems } = makeColors({
-    label: 'Vice Code',
-    roles: ROLES,
-    light: LIGHT,
-    dark: DARK,
-    ...(paper === 'auto' ? {} : { only: paper }),
-  })
-  const look: Look = { colors: theme, problems }
-  made[paper] = look
-  return look
+export function look(): Look {
+  if (made) return made
+  const { theme, problems } = makeColors({ label: 'Vice Code', roles: ROLES, light: LIGHT, dark: DARK })
+  made = { colors: theme, problems }
+  return made
 }
 
 /** The line that would stop the desktop app painting the look, if there is one. */
-export function unpainted(paper: Stock): string | undefined {
-  return lookFor(paper).problems.find(line => line.startsWith("Desktop won't paint"))
+export function unpainted(): string | undefined {
+  return look().problems.find(line => line.startsWith("Desktop won't paint"))
 }

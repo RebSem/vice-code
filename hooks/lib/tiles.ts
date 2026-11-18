@@ -5,7 +5,8 @@
 // The sky is a field of glyphs that brightens toward the horizon, so the sunset is drawn in
 // characters; the city, the palms and the slatted sun are square tiles, so the silhouette
 // stays clear. The field answers the pointer where a surface lets it through (CSS :hover,
-// no script) and a slow wave walks through it where it does not.
+// no script): a banner in a card does; the backdrop does not, since the desktop app lays it
+// in an inert layer under the conversation. There a slow wave walks through the sky.
 //
 // Pure string building, the same every time: shapes are drawn from geometry and
 // rasterised onto the grid.

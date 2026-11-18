@@ -16,7 +16,7 @@ import { AWK_PROGRAM, emptySummary, mergeSummaries, parseSummary, projectName, s
 import { LABELS, fmtDate } from './lib/i18n'
 import type { Candidate, FileRef } from './lib/importer'
 import { changed, compactStored, FILES_KEY, subCandidate } from './lib/importer'
-import { lookFor } from './lib/look'
+import { look } from './lib/look'
 import type { Snapshot } from './lib/model'
 import { bustedData, bustedRowId, cardData, hash, hudData, isTooOld, liteCardData, paneModel, pick, RADIO_STATION, spinnerWord, starsText, textBar, tipFor, wantedLabel, weaponFor } from './lib/model'
 import { sceneCells } from './lib/raster'
@@ -251,6 +251,11 @@ let isOff = false
 let paper: Stock = 'auto'
 /** True while the first card of a conversation waits for a surface to attach. */
 let isGreetingPending = false
+/** True when the engine took the colors with the last look; an engine from before them takes the scene alone. */
+let hasColors = false
+/** How many prompts of a dormant session have looked at the roster, and how many may. */
+let wakeChecks = 0
+const WAKE_CHECKS = 5
 /** True once the first turn of a conversation has asked for the look again: a terminal never draws it, so once is enough. */
 let hasRetriedLook = false
 /** Prompts in Cyrillic and in other letters since the mod woke: the remembered language follows a habit, not one pasted line. */
@@ -595,33 +600,81 @@ async function isBackdropOn($: EngineInterface): Promise<boolean> {
 async function applyLook($: EngineInterface): Promise<string | null> {
   const hasScene = await isBackdropOn($)
   const wasDrawn = isBackdropDrawn
+  const hadColors = hasColors
   // The newest engines read the scene's name as `scene`, the ones before them as `id`.
   // One shape with both serves the engines that drop a member they do not know; the
   // shape with `scene` alone serves one that refuses it. The glass has no tint of its
   // own: the panels take the look's colors.
   const glass = { blur: 12, opacity: 0.55 }
   const scenes = hasScene ? [{ backdrop: { scene: BACKDROP, id: BACKDROP, glass } }, { backdrop: { scene: BACKDROP, glass } }] : [{}]
-  // A paper picked by hand is a look for that one mode, so the words suit the picture.
-  const colors = opts.colors ? { colors: lookFor(paper).colors, ...(paper === 'auto' ? {} : { overrideColorScheme: paper }) } : {}
+  // Both modes of the colors always go, and no mode is asked for: the window keeps its
+  // own, and the paper a person picks changes the scene alone.
+  const colors = opts.colors ? { colors: look().colors } : {}
   // An engine from before the colors refuses them: it still gets the scene.
-  const tries = [...scenes.map(sc => ({ ...colors, ...sc })), ...(opts.colors ? scenes : [])].filter(look => Object.keys(look).length > 0)
+  const tries = [...scenes.map(sc => ({ ...colors, ...sc })), ...(opts.colors ? scenes : [])].filter(attempt => Object.keys(attempt).length > 0)
+  // Worked out in locals and written once at the end: two calls can overlap (a window
+  // attaching while the mod wakes), and neither may see the other's half-done state.
   let why = 'off'
-  isBackdropPending = false
-  isBackdropDrawn = false
-  for (const look of tries) {
+  let isSet = false
+  let isShown = false
+  let withColors = false
+  for (const attempt of tries) {
     try {
-      const r = await $.theme.set(look as never)
-      isBackdropPending = !r.isDrawn
-      isBackdropDrawn = r.isDrawn && hasScene
-      why = r.isDrawn ? '' : r.reason
+      const r = await $.theme.set(attempt as never)
+      // "Drawn" means a client said it draws themes. A window that joined by simply
+      // asking to draw is on the roster without having said so, and the engine hands it
+      // the theme all the same: a session that is an app window alone counts as shown.
+      isSet = true
+      isShown = r.isDrawn || (await isAppOnly($))
+      withColors = 'colors' in attempt
+      why = isShown || r.isDrawn ? '' : r.reason
       break
     } catch (err) {
       why = String(err).slice(0, 120)
     }
   }
-  // A card that drew its own banner for want of a scene lets go of it now, and the reverse.
-  if (wasDrawn !== isBackdropDrawn) await syncScene($, true)
+  isBackdropPending = isSet && !isShown
+  isBackdropDrawn = isShown && hasScene
+  hasColors = isSet && withColors
+  // A card that drew its own banner for want of a scene lets go of it now, and the
+  // reverse; a card that spoke of the colors follows what the engine took.
+  if (wasDrawn !== isBackdropDrawn || hadColors !== hasColors) await syncScene($, true)
   return why === '' ? null : why
+}
+
+/**
+ * True when the session is an app window and nothing else: a desktop or mobile client on
+ * the roster and no terminal. With a terminal there too, the terminal stays the measure:
+ * it draws no look, so it keeps the card that opens each conversation.
+ */
+async function isAppOnly($: EngineInterface): Promise<boolean> {
+  try {
+    const roster = await $.session.surfaces()
+    return !roster.includes('terminal') && roster.some(s => s === 'desktop' || s === 'mobile')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A dormant mod wakes at `session.attach`. This is the second chance: if a window got onto
+ * the roster without that event reaching this module, one of the person's first prompts
+ * finds it there and wakes the mod. A run nobody watches has an empty roster and stays
+ * asleep; after a few prompts it is no longer asked, so a long script pays nothing for it.
+ */
+async function wakeIfWatched($: EngineInterface): Promise<void> {
+  if (phase !== 'dormant' || wakeChecks >= WAKE_CHECKS) return
+  wakeChecks += 1
+  let isWatched = false
+  try {
+    isWatched = (await $.session.surfaces()).length > 0
+  } catch {
+    // no roster to read: stay asleep
+  }
+  if (!isWatched || phase !== 'dormant') return
+  phase = 'awake'
+  inert = false
+  await wake($)
 }
 
 /** Reads the history a moment after the session is up; one reading at a time. */
@@ -1057,6 +1110,7 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    if (phase === 'dormant') await wakeIfWatched($).catch(() => undefined)
     if (inert || isOff) return next(e)
     const result = await next(e)
     // The desktop app sends what the person typed through the SDK; runs nobody watches are inert already.
@@ -1506,7 +1560,7 @@ export const register: Register = (on, options) => {
             <Text size="caption" dimColor>{`Vice Code · ${d.forLine}`}</Text>
             <Text size="title" weight="semibold">{d.title}</Text>
           </Box>
-          <Text>{e.surface === 'desktop' || e.surface === 'mobile' ? d.body : d.bodyPlain}</Text>
+          <Text>{e.surface === 'desktop' || e.surface === 'mobile' ? (hasColors ? d.body : d.bodyScene) : d.bodyPlain}</Text>
           {d.news && (
             <Text size="footnote">
               <Text dimColor>{d.news.before}</Text>
@@ -1667,7 +1721,10 @@ export const register: Register = (on, options) => {
       heat = lim.mem.busted ? 5 : starsFor(lim.short?.pct ?? null)
       flash = (await $.clock.now()) < ((await read($, ui)).flashUntil ?? 0)
     }
-    // Interactive, so the picture's own CSS animates it and the sky answers the pointer; reduced motion rests it.
+    // Interactive, so the picture's own CSS animates it; reduced motion rests it. The desktop
+    // app keeps the backdrop out of the pointer's reach (an inert layer under the
+    // conversation), so the sky here moves by its own wave; the card's banner is the
+    // picture that answers the pointer.
     return <Svg isInteractive source={backdropSvg(sc.tod, sc.paper, heat, flash)} alt={`${LABELS[lang].sceneAlt}, ${TOD_LABEL[lang][sc.tod].toLowerCase()}`} />
   })
 

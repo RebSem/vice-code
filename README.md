@@ -97,7 +97,7 @@ All through one command, `/vice`.
 | `/vice lite` | Turn the game off, keep the look |
 | `/vice off` | Turn the whole mod off, in this session and the next ones: the look is cleared and every hook steps aside |
 | `/vice on` | Bring it back |
-| `/vice paper dark`, `light`, `auto` | Pick the stock the scene prints on; `dark` and `light` also send the colors for that one mode |
+| `/vice paper dark`, `light`, `auto` | Pick the stock the scene prints on. `auto` follows the app's light or dark setting; the window itself keeps its own mode |
 | `/vice backdrop` | Skyline on or off |
 | `/vice card` | Show the card again |
 | `/vice radio` | Radio on or off |
@@ -148,13 +148,16 @@ Prompt text, answers and code are never stored. Sound plays only when you ask fo
 ## Known limits
 
 - The look (colors and skyline) is drawn only by the desktop and mobile apps. The terminal and VS Code keep their own colors.
-- Nothing here has been watched in a live window by the mod's tests. The test kit checks the tree of elements, not pixels.
-- In the desktop and mobile apps the mod wakes when the app's window attaches to the session. That follows the mods API's description of app sessions; if the look never appears there, please open an issue with the `vice-code:` lines from `claude --debug`.
-- Whether the pointer reaches the skyline behind the conversation depends on the app. The hello card's banner is a row in the conversation and does take hover.
-- The scene picks light or dark paper by `prefers-color-scheme` inside its own frame. If it ever disagrees with your window, `/vice paper dark` or `/vice paper light` fixes it.
+- What was checked without a window: the engine was run headless, the way the desktop app runs it, on 2.1.325 and 2.1.319, with a desktop client attached. The mod woke, the look was accepted, the hello card and the backdrop were drawn, and the `/vice` commands answered. What the mod's tests cannot check is pixels: the test kit sees the tree of elements, not the window.
+- The skyline behind the conversation does not react to the pointer. The desktop app keeps a backdrop in an inert layer under the conversation, so only the hello card's banner, which is a row in the conversation, lights up under it.
+- The app lays its own frosted veil over the scene under the conversation column and the sidebar, to keep text readable. The scene is crisp at the sides of the window and soft behind the words.
+- Whether your build of the app paints a mod's colors, and whether it draws backdrops at all, is the app's decision: both are recent features. Where the backdrop is not drawn you still get the hello card, and the game with `/vice full`.
+- With `paper` on `auto` the scene follows the app's own light or dark setting. `/vice paper dark` and `/vice paper light` change the scene alone: the window keeps its own mode.
 - A session has one theme: Vice Code replaces another mod's look, and the other mod replaces Vice Code's.
 - The engine sends no event when a usage window resets, so the busted card folds a few seconds after the reset, on the mod's own alarm.
 - A limit the numbers do not show (a single model's weekly cap) is seen only when a request is turned away; its release time is unknown, and the card says so.
+
+If the look never appears in the app, please open an issue with the `vice-code:` lines from `claude --debug`.
 
 ## How it is made
 
@@ -166,7 +169,7 @@ The mod draws everything from code. It ships no audio files, and the only images
 
 ## Development
 
-The tests (59) run in Claude Code's test kit; they pass on 2.1.319 (terminal CLI) and 2.1.325 (the desktop app's engine).
+The tests (64) run in Claude Code's test kit; they pass on 2.1.319 (terminal CLI) and 2.1.325 (the desktop app's engine).
 
 ```bash
 claude plugin test .

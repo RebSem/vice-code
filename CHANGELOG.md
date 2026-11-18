@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.1 — 2026-11-18
+
+What two checks against the app's own engine turned up, a few hours after 1.2.0.
+
+### Fixed
+
+- **`/vice paper dark` and `light` no longer drop half of the colors.** The desktop app keeps the window's own mode whatever a look asks for, so a look made for one mode left a window in the other mode without the mod's colors. The colors now always go in both modes and the look no longer asks the window to switch: the paper changes the scene alone, and the command's reply says that the window keeps its own mode.
+- **An app window that joined without announcing itself counts as an app window.** A window can get onto a session's roster just by asking to draw, without saying that it draws themes. The engine then answers "not drawn" although it hands that window the theme. The mod took this for a terminal: it showed the hello card in every new conversation and sent the look again at the first turn. It now reads the roster as well. A terminal with a phone attached is still a terminal and keeps its card at the top of each conversation.
+- **A second chance to wake.** A mod that went dormant in a session a program started wakes when a window attaches. If that event ever fails to reach the module, one of the person's first prompts now finds the window on the roster and wakes the mod. A run nobody watches is asked five times and then left alone.
+- **Two looks sent at once no longer trip each other.** A window attaching while the mod was waking could make it forget that the scene was drawn, and the once-after-install card came again in the next conversation.
+- The hello card speaks of the colors only where the engine took them. An engine from before the colors gets a card about the skyline alone.
+- The `playerName` setting no longer mentions a "loading card": it is the welcome card.
+
+### Changed
+
+- The hello card says "the picture above" for the banner whose sky answers the pointer. The skyline behind the conversation does not take the pointer in the desktop app, which keeps a backdrop in an inert layer under the conversation; the docs and the code comments now say so plainly.
+
+### Checked
+
+- The engine was run the way the desktop app runs it: headless over stream-json, under an empty config folder, with a desktop client attached by the engine's own `ui_attach` request, and again with a client that joined only by asking to draw. On 2.1.325 (the app's engine): with no client the mod stayed dormant; on either kind of join it woke once and registered `/vice`, the look went out with the colors in both modes and the scene, one hello card was placed and drawn, the backdrop came back as an SVG of 98,948 characters, and `/vice`, `/vice paper dark`, `/vice full` and `/vice off` answered. On 2.1.319 the same runs passed with the scene alone, since that engine has no colors. The 2.1.325 runs were repeated on the released code.
+- Tests: 64, passing on Claude Code 2.1.319 and 2.1.325.
+
 ## 1.2.0 — 2026-11-18
 
 Two modes: the look on its own by default, the game one command away.
